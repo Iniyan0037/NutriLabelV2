@@ -1,16 +1,15 @@
 import os
-import tempfile
 import time
-from collections import OrderedDict
+import tempfile
 
-import easyocr
-import requests
-from PIL import Image
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import requests
+from PIL import Image
+import easyocr
 
 from analyzer import analyze_ingredients
-from db import init_db, DB_PATH
+from db import init_db, get_db_status
 
 app = Flask(__name__)
 
@@ -21,30 +20,16 @@ else:
     origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
     CORS(app, resources={r"/*": {"origins": origins}})
 
-init_db()
+product_cache = {}
+last_request_time = 0
 ocr_reader = easyocr.Reader(["en"], gpu=False)
-product_cache = OrderedDict()
-last_request_time = 0.0
-MAX_CACHE_ITEMS = 100
 
-
-def cache_get(key):
-    value = product_cache.get(key)
-    if value is not None:
-        product_cache.move_to_end(key)
-    return value
-
-
-def cache_set(key, value):
-    product_cache[key] = value
-    product_cache.move_to_end(key)
-    while len(product_cache) > MAX_CACHE_ITEMS:
-        product_cache.popitem(last=False)
+init_db()
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "NutriLabel backend is running", "database_path": DB_PATH})
+    return jsonify({"message": "NutriLabel backend is running"})
 
 
 @app.route("/health", methods=["GET"])
@@ -54,7 +39,7 @@ def health():
 
 @app.route("/db-status", methods=["GET"])
 def db_status():
-    return jsonify({"status": "ok", "database_path": DB_PATH})
+    return jsonify(get_db_status())
 
 
 @app.route("/analyze", methods=["POST"])
@@ -65,8 +50,10 @@ def analyze():
 
     if not isinstance(ingredient_text, str):
         return jsonify({"error": "ingredient_text must be a string"}), 400
+
     if not isinstance(selected_profiles, list):
         return jsonify({"error": "selected_profiles must be a list"}), 400
+
     if not ingredient_text.strip():
         return jsonify({"error": "ingredient_text cannot be empty"}), 400
 
@@ -82,22 +69,24 @@ def analyze():
 @app.route("/product/<barcode>", methods=["GET"])
 def get_product(barcode):
     global last_request_time
+
     selected_profiles = request.args.getlist("profile")
 
     if not isinstance(barcode, str) or not barcode.strip():
         return jsonify({"error": "barcode cannot be empty"}), 400
+
     normalized_barcode = barcode.strip()
+
     if not normalized_barcode.isdigit():
         return jsonify({"error": "barcode must contain digits only"}), 400
 
     cache_key = f"{normalized_barcode}|{','.join(sorted(selected_profiles))}"
-    cached = cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
+    if cache_key in product_cache:
+        return jsonify(product_cache[cache_key])
 
     now = time.time()
-    if now - last_request_time < 1:
-        time.sleep(1 - (now - last_request_time))
+    if now - last_request_time < 2:
+        time.sleep(2 - (now - last_request_time))
 
     off_url = (
         f"https://world.openfoodfacts.org/api/v2/product/{normalized_barcode}.json"
@@ -115,7 +104,10 @@ def get_product(barcode):
         off_data = response.json()
     except requests.HTTPError as e:
         if response.status_code == 429:
-            return jsonify({"error": "Open Food Facts rate limit reached", "details": "Too many requests. Please wait and try again."}), 429
+            return jsonify({
+                "error": "Open Food Facts rate limit reached",
+                "details": "Too many requests. Please wait a minute and try again."
+            }), 429
         return jsonify({"error": "Could not reach Open Food Facts", "details": str(e)}), 502
     except requests.RequestException as e:
         return jsonify({"error": "Could not reach Open Food Facts", "details": str(e)}), 502
@@ -148,7 +140,8 @@ def get_product(barcode):
         "additives_tags": additives,
         "analysis": analysis,
     }
-    cache_set(cache_key, result)
+
+    product_cache[cache_key] = result
     return jsonify(result)
 
 
@@ -158,10 +151,12 @@ def extract_text_from_image():
         return jsonify({"error": "No image file provided"}), 400
 
     image_file = request.files["image"]
+
     if not image_file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
     temp_path = None
+
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
             temp_path = temp_file.name
@@ -169,40 +164,62 @@ def extract_text_from_image():
 
         image = Image.open(temp_path).convert("RGB")
         image.save(temp_path)
-        lines = ocr_reader.readtext(temp_path, detail=0)
 
-        skip_keywords = [
-            "linkedin", "facebook", "instagram", "twitter", "www.", ".com", ".au",
-            "http", "follow", "share", "comment", "like", "subscribe"
-        ]
-        keep_keywords = [
-            "ingredient", "ingredients", "contains", "may contain", "flour", "sugar", "salt",
-            "oil", "water", "milk", "soy", "wheat", "rice", "corn", "vitamin", "mineral",
-            "emulsifier", "flavour", "flavor", "colour", "color", "preservative"
-        ]
+        result = ocr_reader.readtext(temp_path, detail=0)
 
         cleaned_lines = []
-        for line in lines:
+
+        skip_keywords = [
+            "linkedin", "facebook", "instagram", "twitter",
+            "www.", ".com", ".au", "http",
+            "follow", "share", "comment", "like", "subscribe"
+        ]
+
+        keep_keywords = [
+            "ingredient", "ingredients", "contains", "may contain",
+            "flour", "sugar", "salt", "oil", "water",
+            "milk", "soy", "wheat", "rice", "corn",
+            "vitamin", "mineral", "emulsifier",
+            "flavour", "flavor", "colour", "color",
+            "preservative"
+        ]
+
+        for line in result:
             line = line.strip()
             lower_line = line.lower()
+
             if not line:
                 continue
+
             if any(word in lower_line for word in skip_keywords):
                 continue
+
             if any(word in lower_line for word in keep_keywords) or "," in line or ";" in line:
                 cleaned_lines.append(line)
 
-        extracted_text = " ".join(cleaned_lines).strip() if cleaned_lines else " ".join(lines).strip()
+        if cleaned_lines:
+            extracted_text = " ".join(cleaned_lines)
+        else:
+            extracted_text = " ".join(result).strip()
+
         lower_text = extracted_text.lower()
         if "ingredients" in lower_text:
-            extracted_text = extracted_text[lower_text.find("ingredients"):]
+            index = lower_text.find("ingredients")
+            extracted_text = extracted_text[index:]
 
         if not extracted_text:
             return jsonify({"error": "No text detected"}), 400
 
-        return jsonify({"ingredient_text": extracted_text})
+        return jsonify({
+            "ingredient_text": extracted_text
+        })
+
     except Exception as e:
-        return jsonify({"error": "OCR processing failed", "details": str(e)}), 500
+        return jsonify({
+            "error": "OCR processing failed",
+            "details": str(e)
+        }), 500
+
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
