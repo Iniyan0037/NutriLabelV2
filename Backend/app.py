@@ -6,7 +6,6 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import requests
 from PIL import Image
-import easyocr
 
 from analyzer import analyze_ingredients
 from db import init_db, get_db_status
@@ -22,7 +21,20 @@ else:
 
 product_cache = {}
 last_request_time = 0
-ocr_reader = easyocr.Reader(["en"], gpu=False)
+
+# IMPORTANT: do NOT initialize EasyOCR here
+ocr_reader = None
+
+
+def get_ocr_reader():
+    global ocr_reader
+
+    if ocr_reader is None:
+        import easyocr
+        ocr_reader = easyocr.Reader(["en"], gpu=False)
+
+    return ocr_reader
+
 
 init_db()
 
@@ -165,7 +177,8 @@ def extract_text_from_image():
         image = Image.open(temp_path).convert("RGB")
         image.save(temp_path)
 
-        result = ocr_reader.readtext(temp_path, detail=0)
+        reader = get_ocr_reader()
+        result = reader.readtext(temp_path, detail=0)
 
         cleaned_lines = []
 
