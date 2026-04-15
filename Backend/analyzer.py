@@ -23,19 +23,79 @@ def normalize_profiles(selected_profiles):
     return normalized
 
 
+def clean_ocr_text(text):
+    if not isinstance(text, str):
+        return ""
+
+    cleaned = text.lower()
+
+    cleaned = cleaned.replace("\r", "\n")
+    cleaned = cleaned.replace("(", " (")
+    cleaned = cleaned.replace(")", ") ")
+
+    # remove common OCR-broken percentage patterns
+    cleaned = re.sub(r"\b\d+([./]\d+)?\s*%\b", " ", cleaned)
+    cleaned = re.sub(r"\b\d+\s*/\s*\d+\b", " ", cleaned)
+    cleaned = re.sub(r"\b\d+[./]\d+\b", " ", cleaned)
+
+    # remove headings / summary lines that should not become ingredients
+    cleaned = re.sub(r"\bcontains\b[: ]*", ", ", cleaned)
+    cleaned = re.sub(r"\bmay contain\b[: ]*", ", ", cleaned)
+    cleaned = re.sub(r"\btotal milk solids\b[: ]*", " ", cleaned)
+    cleaned = re.sub(r"\btotal cocoa solids\b[: ]*", " ", cleaned)
+    cleaned = re.sub(r"\bnutrition[a-z ]*\b", " ", cleaned)
+    cleaned = re.sub(r"\ballergen[a-z ]*\b", " ", cleaned)
+
+    # keep useful ingredient parentheses but remove pure-number parentheses
+    cleaned = re.sub(r"\(\s*\d+([./]\d+)?\s*%?\s*\)", " ", cleaned)
+
+    # remove stray punctuation except commas/hyphens/colons
+    cleaned = re.sub(r"[^\w\s,%:\-]", " ", cleaned)
+
+    # normalize spaces/newlines
+    cleaned = cleaned.replace("\n", ", ")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
+
+    return cleaned.strip()
+
+
 def split_ingredients(text):
     if not isinstance(text, str) or not text.strip():
         return []
 
-    parts = re.split(r",|;|\.", text)
-    cleaned = []
+    cleaned = clean_ocr_text(text)
+
+    parts = re.split(r",|;|\.", cleaned)
+    results = []
 
     for part in parts:
         item = part.strip().lower()
-        if item:
-            cleaned.append(item)
 
-    return cleaned
+        if not item:
+            continue
+
+        # remove leftover percentages and numbers
+        item = re.sub(r"\b\d+([./]\d+)?\s*%?\b", " ", item)
+
+        # remove generic prefixes
+        item = re.sub(r"^(ingredients?|contains|may contain)\s*:?\s*", "", item)
+
+        # collapse spaces again
+        item = re.sub(r"\s+", " ", item).strip()
+
+        if not item:
+            continue
+
+        # skip obvious garbage fragments
+        if len(item) <= 1:
+            continue
+        if re.fullmatch(r"[\d\s%./\-]+", item):
+            continue
+
+        results.append(item)
+
+    return results
 
 
 def normalize_possible_additive_code(raw):
