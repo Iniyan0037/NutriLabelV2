@@ -1,11 +1,9 @@
 import os
 import time
-import tempfile
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import requests
-from PIL import Image
 
 from analyzer import analyze_ingredients
 from db import init_db, get_db_status
@@ -21,20 +19,6 @@ else:
 
 product_cache = {}
 last_request_time = 0
-
-# IMPORTANT: do NOT initialize EasyOCR here
-ocr_reader = None
-
-
-def get_ocr_reader():
-    global ocr_reader
-
-    if ocr_reader is None:
-        import easyocr
-        ocr_reader = easyocr.Reader(["en"], gpu=False)
-
-    return ocr_reader
-
 
 init_db()
 
@@ -158,7 +142,11 @@ def get_product(barcode):
 
 
 @app.route("/ocr", methods=["POST"])
-def extract_text_from_image():
+def ocr():
+    api_key = os.getenv("OCR_SPACE_API_KEY")
+    if not api_key:
+        return jsonify({"error": "OCR service is not configured"}), 500
+
     if "image" not in request.files:
         return jsonify({"error": "No image file provided"}), 400
 
@@ -167,75 +155,77 @@ def extract_text_from_image():
     if not image_file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
-    temp_path = None
-
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-            temp_path = temp_file.name
-            image_file.save(temp_path)
+        files = {
+            "file": (
+                image_file.filename,
+                image_file.stream,
+                image_file.mimetype or "image/jpeg"
+            )
+        }
 
-        image = Image.open(temp_path).convert("RGB")
-        image.save(temp_path)
+        data = {
+            "apikey": api_key,
+            "language": "eng",
+            "isOverlayRequired": "false",
+            "OCREngine": "2",
+            "scale": "true",
+        }
 
-        reader = get_ocr_reader()
-        result = reader.readtext(temp_path, detail=0)
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            files=files,
+            data=data,
+            timeout=60,
+        )
+        response.raise_for_status()
 
-        cleaned_lines = []
+        payload = response.json()
 
-        skip_keywords = [
-            "linkedin", "facebook", "instagram", "twitter",
-            "www.", ".com", ".au", "http",
-            "follow", "share", "comment", "like", "subscribe"
-        ]
+        if payload.get("IsErroredOnProcessing"):
+            messages = payload.get("ErrorMessage") or payload.get("ErrorDetails") or ["OCR processing failed"]
+            if isinstance(messages, list):
+                message = " ".join(str(m) for m in messages)
+            else:
+                message = str(messages)
 
-        keep_keywords = [
-            "ingredient", "ingredients", "contains", "may contain",
-            "flour", "sugar", "salt", "oil", "water",
-            "milk", "soy", "wheat", "rice", "corn",
-            "vitamin", "mineral", "emulsifier",
-            "flavour", "flavor", "colour", "color",
-            "preservative"
-        ]
+            return jsonify({
+                "error": "OCR failed",
+                "details": message
+            }), 400
 
-        for line in result:
-            line = line.strip()
-            lower_line = line.lower()
+        parsed_results = payload.get("ParsedResults") or []
+        extracted_text = " ".join(
+            (item.get("ParsedText") or "").strip()
+            for item in parsed_results
+            if item.get("ParsedText")
+        ).strip()
 
-            if not line:
-                continue
-
-            if any(word in lower_line for word in skip_keywords):
-                continue
-
-            if any(word in lower_line for word in keep_keywords) or "," in line or ";" in line:
-                cleaned_lines.append(line)
-
-        if cleaned_lines:
-            extracted_text = " ".join(cleaned_lines)
-        else:
-            extracted_text = " ".join(result).strip()
+        if not extracted_text:
+            return jsonify({
+                "ingredient_text": "",
+                "warning": "No text could be extracted from the image."
+            }), 200
 
         lower_text = extracted_text.lower()
         if "ingredients" in lower_text:
             index = lower_text.find("ingredients")
             extracted_text = extracted_text[index:]
 
-        if not extracted_text:
-            return jsonify({"error": "No text detected"}), 400
-
         return jsonify({
             "ingredient_text": extracted_text
         })
 
-    except Exception as e:
+    except requests.RequestException as e:
         return jsonify({
-            "error": "OCR processing failed",
+            "error": "OCR request failed",
             "details": str(e)
-        }), 500
-
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+        }), 502
+    except ValueError as e:
+        return jsonify({
+            "error": "Invalid OCR response",
+            "details": str(e)
+        }), 502
 
 
 if __name__ == "__main__":
