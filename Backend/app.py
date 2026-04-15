@@ -170,6 +170,8 @@ def ocr():
             "isOverlayRequired": "false",
             "OCREngine": "2",
             "scale": "true",
+            "detectOrientation": "true",
+            "isTable": "false",
         }
 
         response = requests.post(
@@ -195,22 +197,85 @@ def ocr():
             }), 400
 
         parsed_results = payload.get("ParsedResults") or []
-        extracted_text = " ".join(
+        raw_text = " ".join(
             (item.get("ParsedText") or "").strip()
             for item in parsed_results
             if item.get("ParsedText")
         ).strip()
 
-        if not extracted_text:
+        if not raw_text:
             return jsonify({
                 "ingredient_text": "",
                 "warning": "No text could be extracted from the image."
             }), 200
 
-        lower_text = extracted_text.lower()
-        if "ingredients" in lower_text:
-            index = lower_text.find("ingredients")
-            extracted_text = extracted_text[index:]
+        text = raw_text.replace("\r", "\n")
+        lower_text = text.lower()
+
+        start_markers = [
+            "ingredients:",
+            "ingredients",
+            "ingredient list:",
+            "ingredient list",
+            "contains:",
+            "contains"
+        ]
+
+        end_markers = [
+            "nutrition",
+            "nutritional",
+            "serving suggestion",
+            "storage",
+            "allergen",
+            "allergens",
+            "may contain",
+            "warning",
+            "directions",
+            "distributed by",
+            "manufactured by",
+            "best before",
+            "product of"
+        ]
+
+        start_index = -1
+        for marker in start_markers:
+            idx = lower_text.find(marker)
+            if idx != -1:
+                start_index = idx
+                break
+
+        extracted_text = text[start_index:] if start_index != -1 else text
+
+        lower_extracted = extracted_text.lower()
+        cut_index = len(extracted_text)
+
+        for marker in end_markers:
+            idx = lower_extracted.find(marker)
+            if idx != -1 and idx < cut_index:
+                cut_index = idx
+
+        extracted_text = extracted_text[:cut_index].strip()
+
+        lines = [line.strip() for line in extracted_text.splitlines() if line.strip()]
+
+        cleaned_lines = []
+        skip_words = [
+            "facebook", "instagram", "twitter", "linkedin",
+            "www.", ".com", ".au", "follow us", "scan me"
+        ]
+
+        for line in lines:
+            lower_line = line.lower()
+            if any(word in lower_line for word in skip_words):
+                continue
+            cleaned_lines.append(line)
+
+        extracted_text = " ".join(cleaned_lines).strip()
+
+        if extracted_text.lower().startswith("ingredients"):
+            parts = extracted_text.split(":", 1)
+            if len(parts) == 2:
+                extracted_text = parts[1].strip()
 
         return jsonify({
             "ingredient_text": extracted_text
@@ -226,7 +291,6 @@ def ocr():
             "error": "Invalid OCR response",
             "details": str(e)
         }), 502
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
