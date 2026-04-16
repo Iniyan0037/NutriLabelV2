@@ -170,9 +170,9 @@ def ocr():
             "apikey": api_key,
             "language": "eng",
             "isOverlayRequired": "false",
-            "OCREngine": "2",
-            "scale": "true",
-            "detectOrientation": "true",
+            "OCREngine": "1",
+            "scale": "false",
+            "detectOrientation": "false",
             "isTable": "false",
         }
 
