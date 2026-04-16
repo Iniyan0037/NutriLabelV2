@@ -12,7 +12,6 @@ engine = create_engine(
     future=True,
 )
 
-
 DEFAULT_RULES = [
     # Common safe ingredients
     ("ingredient", "sugar", "*", "Allowed", "Sugar does not conflict with the selected dietary profiles."),
@@ -26,16 +25,29 @@ DEFAULT_RULES = [
     ("ingredient", "sunflower oil", "*", "Allowed", "Sunflower oil does not conflict with the selected dietary profiles."),
     ("ingredient", "canola oil", "*", "Allowed", "Canola oil does not conflict with the selected dietary profiles."),
     ("ingredient", "soy lecithin", "*", "Allowed", "Soy lecithin does not directly conflict with the selected dietary profiles."),
+    ("ingredient", "soy", "*", "Allowed", "Soy does not directly conflict with the selected dietary profiles."),
+    ("ingredient", "soybeans", "*", "Allowed", "Soybeans do not directly conflict with the selected dietary profiles."),
+    ("ingredient", "soy flour", "*", "Allowed", "Soy flour does not directly conflict with the selected dietary profiles."),
+    ("ingredient", "soy protein", "*", "Allowed", "Soy protein does not directly conflict with the selected dietary profiles."),
     ("ingredient", "flavour", "*", "Uncertain", "Flavour is too generic and may require further verification."),
     ("ingredient", "flavor", "*", "Uncertain", "Flavor is too generic and may require further verification."),
     ("ingredient", "natural flavour", "*", "Uncertain", "Natural flavour is too generic and may require further verification."),
     ("ingredient", "natural flavor", "*", "Uncertain", "Natural flavor is too generic and may require further verification."),
+    ("ingredient", "flavouring", "*", "Uncertain", "Flavouring is too generic and may require further verification."),
+    ("ingredient", "flavoring", "*", "Uncertain", "Flavoring is too generic and may require further verification."),
+    ("ingredient", "vanillin", "*", "Allowed", "Vanillin does not directly conflict with the selected dietary profiles."),
 
     # Dairy / animal-derived / egg
     ("ingredient", "milk", "vegan", "Restricted", "Milk is animal-derived and not suitable for vegan diets."),
     ("ingredient", "milk", "dairy-free", "Restricted", "Milk conflicts with dairy-free diets."),
     ("ingredient", "milk solids", "vegan", "Restricted", "Milk solids are animal-derived and not suitable for vegan diets."),
     ("ingredient", "milk solids", "dairy-free", "Restricted", "Milk solids conflict with dairy-free diets."),
+    ("ingredient", "milk powder", "vegan", "Restricted", "Milk powder is dairy-derived and not suitable for vegan diets."),
+    ("ingredient", "milk powder", "dairy-free", "Restricted", "Milk powder conflicts with dairy-free diets."),
+    ("ingredient", "skim milk powder", "vegan", "Restricted", "Skim milk powder is dairy-derived and not suitable for vegan diets."),
+    ("ingredient", "skim milk powder", "dairy-free", "Restricted", "Skim milk powder conflicts with dairy-free diets."),
+    ("ingredient", "fat-reduced milk powder", "vegan", "Restricted", "Fat-reduced milk powder is dairy-derived and not suitable for vegan diets."),
+    ("ingredient", "fat-reduced milk powder", "dairy-free", "Restricted", "Fat-reduced milk powder conflicts with dairy-free diets."),
     ("ingredient", "cheese", "vegan", "Restricted", "Cheese is dairy and not suitable for vegan diets."),
     ("ingredient", "cheese", "dairy-free", "Restricted", "Cheese conflicts with dairy-free diets."),
     ("ingredient", "butter", "vegan", "Restricted", "Butter is dairy and not suitable for vegan diets."),
@@ -69,11 +81,17 @@ DEFAULT_RULES = [
 
     # Nuts
     ("ingredient", "almond", "nut-free", "Restricted", "Almond conflicts with nut-free diets."),
+    ("ingredient", "almonds", "nut-free", "Restricted", "Almonds conflict with nut-free diets."),
     ("ingredient", "peanut", "nut-free", "Restricted", "Peanut conflicts with nut-free diets."),
+    ("ingredient", "peanuts", "nut-free", "Restricted", "Peanuts conflict with nut-free diets."),
     ("ingredient", "cashew", "nut-free", "Restricted", "Cashew conflicts with nut-free diets."),
+    ("ingredient", "cashews", "nut-free", "Restricted", "Cashews conflict with nut-free diets."),
     ("ingredient", "hazelnut", "nut-free", "Restricted", "Hazelnut conflicts with nut-free diets."),
+    ("ingredient", "hazelnuts", "nut-free", "Restricted", "Hazelnuts conflict with nut-free diets."),
     ("ingredient", "walnut", "nut-free", "Restricted", "Walnut conflicts with nut-free diets."),
+    ("ingredient", "walnuts", "nut-free", "Restricted", "Walnuts conflict with nut-free diets."),
     ("ingredient", "pistachio", "nut-free", "Restricted", "Pistachio conflicts with nut-free diets."),
+    ("ingredient", "pistachios", "nut-free", "Restricted", "Pistachios conflict with nut-free diets."),
 
     # Jain-sensitive
     ("ingredient", "garlic", "Jain", "Restricted", "Garlic conflicts with Jain dietary restrictions."),
@@ -138,6 +156,8 @@ DEFAULT_ALIASES = [
     ("e47i", "e471", "additive"),
     ("e47l", "e471", "additive"),
     ("e32z", "e322", "additive"),
+    ("e322i", "e322", "additive"),
+    ("e3221", "e322", "additive"),
 ]
 
 
@@ -168,38 +188,35 @@ def init_db():
             ON rules(rule_type, name)
         """))
 
-        rules_count = conn.execute(text("SELECT COUNT(*) FROM rules")).scalar_one()
-        aliases_count = conn.execute(text("SELECT COUNT(*) FROM aliases")).scalar_one()
+        for rule_type, name, profile_name, status, reason in DEFAULT_RULES:
+            conn.execute(
+                text("""
+                    INSERT INTO rules (rule_type, name, profile_name, status, reason)
+                    VALUES (:rule_type, :name, :profile_name, :status, :reason)
+                    ON CONFLICT (rule_type, name, profile_name) DO NOTHING
+                """),
+                {
+                    "rule_type": rule_type,
+                    "name": name,
+                    "profile_name": profile_name,
+                    "status": status,
+                    "reason": reason,
+                },
+            )
 
-        if rules_count == 0:
-            for rule_type, name, profile_name, status, reason in DEFAULT_RULES:
-                conn.execute(
-                    text("""
-                        INSERT INTO rules (rule_type, name, profile_name, status, reason)
-                        VALUES (:rule_type, :name, :profile_name, :status, :reason)
-                    """),
-                    {
-                        "rule_type": rule_type,
-                        "name": name,
-                        "profile_name": profile_name,
-                        "status": status,
-                        "reason": reason,
-                    },
-                )
-
-        if aliases_count == 0:
-            for alias, canonical_name, rule_type in DEFAULT_ALIASES:
-                conn.execute(
-                    text("""
-                        INSERT INTO aliases (alias, canonical_name, rule_type)
-                        VALUES (:alias, :canonical_name, :rule_type)
-                    """),
-                    {
-                        "alias": alias,
-                        "canonical_name": canonical_name,
-                        "rule_type": rule_type,
-                    },
-                )
+        for alias, canonical_name, rule_type in DEFAULT_ALIASES:
+            conn.execute(
+                text("""
+                    INSERT INTO aliases (alias, canonical_name, rule_type)
+                    VALUES (:alias, :canonical_name, :rule_type)
+                    ON CONFLICT (alias) DO NOTHING
+                """),
+                {
+                    "alias": alias,
+                    "canonical_name": canonical_name,
+                    "rule_type": rule_type,
+                },
+            )
 
 
 def resolve_alias(name, rule_type):
