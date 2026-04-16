@@ -219,7 +219,7 @@ def ocr():
             "ingredients",
             "ingredient list:",
             "ingredient list",
-            "contains:"
+            "contains:",
         ]
 
         end_markers = [
@@ -231,7 +231,7 @@ def ocr():
             "distributed by",
             "manufactured by",
             "best before",
-            "product of"
+            "product of",
         ]
 
         start_index = -1
@@ -258,7 +258,7 @@ def ocr():
 
         skip_words = [
             "facebook", "instagram", "twitter", "linkedin",
-            "www.", ".com", ".au", "follow us", "scan me"
+            "www.", ".com", ".au", "follow us", "scan me",
         ]
 
         for line in lines:
@@ -293,6 +293,8 @@ def ocr():
             "error": "OCR failed",
             "details": str(e)
         }), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
