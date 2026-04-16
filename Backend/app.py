@@ -156,10 +156,12 @@ def ocr():
         return jsonify({"error": "Empty filename"}), 400
 
     try:
+        image_bytes = image_file.read()
+
         files = {
             "file": (
                 image_file.filename,
-                image_file.read(),
+                image_bytes,
                 image_file.mimetype or "image/jpeg"
             )
         }
@@ -178,7 +180,7 @@ def ocr():
             "https://api.ocr.space/parse/image",
             files=files,
             data=data,
-            timeout=60,
+            timeout=25,
         )
 
         response.raise_for_status()
@@ -276,6 +278,11 @@ def ocr():
             "ingredient_text": extracted_text
         })
 
+    except requests.Timeout:
+        return jsonify({
+            "error": "OCR request timed out",
+            "details": "The OCR service took too long to respond. Try a smaller or more tightly cropped image."
+        }), 504
     except requests.RequestException as e:
         return jsonify({
             "error": "OCR request failed",
