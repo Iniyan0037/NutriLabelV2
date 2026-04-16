@@ -159,7 +159,7 @@ def ocr():
         files = {
             "file": (
                 image_file.filename,
-                image_file.stream,
+                image_file.read(),
                 image_file.mimetype or "image/jpeg"
             )
         }
@@ -180,8 +180,8 @@ def ocr():
             data=data,
             timeout=60,
         )
-        response.raise_for_status()
 
+        response.raise_for_status()
         payload = response.json()
 
         if payload.get("IsErroredOnProcessing"):
@@ -217,18 +217,13 @@ def ocr():
             "ingredients",
             "ingredient list:",
             "ingredient list",
-            "contains:",
-            "contains"
+            "contains:"
         ]
 
         end_markers = [
             "nutrition",
             "nutritional",
-            "serving suggestion",
             "storage",
-            "allergen",
-            "allergens",
-            "may contain",
             "warning",
             "directions",
             "distributed by",
@@ -257,8 +252,8 @@ def ocr():
         extracted_text = extracted_text[:cut_index].strip()
 
         lines = [line.strip() for line in extracted_text.splitlines() if line.strip()]
-
         cleaned_lines = []
+
         skip_words = [
             "facebook", "instagram", "twitter", "linkedin",
             "www.", ".com", ".au", "follow us", "scan me"
@@ -286,12 +281,11 @@ def ocr():
             "error": "OCR request failed",
             "details": str(e)
         }), 502
-    except ValueError as e:
+    except Exception as e:
         return jsonify({
-            "error": "Invalid OCR response",
+            "error": "OCR failed",
             "details": str(e)
-        }), 502
-
+        }), 500
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
