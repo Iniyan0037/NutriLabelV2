@@ -180,7 +180,7 @@ def ocr():
             "https://api.ocr.space/parse/image",
             files=files,
             data=data,
-            timeout=25,
+            timeout=60,
         )
 
         response.raise_for_status()
