@@ -18,7 +18,7 @@ export default function ManualInputScreen({ route, navigation }) {
   const { selectedProfiles = [] } = route.params || {};
   const [ingredientText, setIngredientText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [ocrMode, setOcrMode] = useState(null); // 'camera' | 'gallery' | null
+  const [ocrMode, setOcrMode] = useState(null); // 'camera' | 'gallery' | 'web-upload' | null
 
   const handleAnalyze = async () => {
     if (!ingredientText.trim()) {
@@ -46,9 +46,13 @@ export default function ManualInputScreen({ route, navigation }) {
     }
   };
 
-  const compressImageForOCR = async (uri) => {
+  const compressImageForOCR = async (asset) => {
+    if (Platform.OS === 'web') {
+      return asset;
+    }
+
     const manipulated = await ImageManipulator.manipulateAsync(
-      uri,
+      asset.uri,
       [{ resize: { width: 700 } }],
       {
         compress: 0.2,
@@ -57,7 +61,11 @@ export default function ManualInputScreen({ route, navigation }) {
       }
     );
 
-    return manipulated.uri;
+    return {
+      uri: manipulated.uri,
+      fileName: 'ingredients.jpg',
+      mimeType: 'image/jpeg',
+    };
   };
 
   const handleImageSelection = async (mode) => {
@@ -87,7 +95,7 @@ export default function ManualInputScreen({ route, navigation }) {
             })
           : await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ['images'],
-              quality: 0.4,
+              quality: Platform.OS === 'web' ? 1 : 0.4,
               allowsEditing: true,
             });
 
@@ -95,16 +103,12 @@ export default function ManualInputScreen({ route, navigation }) {
         return;
       }
 
-      setOcrMode(mode);
+      setOcrMode(Platform.OS === 'web' ? 'web-upload' : mode);
 
-      const rawUri = pickerResult.assets[0].uri;
-      const compressedUri = await compressImageForOCR(rawUri);
+      const asset = pickerResult.assets[0];
+      const preparedImage = await compressImageForOCR(asset);
 
-      const response = await uploadImageForOCR({
-        uri: compressedUri,
-        fileName: 'ingredients.jpg',
-        mimeType: 'image/jpeg',
-      });
+      const response = await uploadImageForOCR(preparedImage);
 
       setIngredientText(response.ingredient_text || '');
 
@@ -129,6 +133,7 @@ export default function ManualInputScreen({ route, navigation }) {
 
   const isCameraLoading = ocrMode === 'camera';
   const isGalleryLoading = ocrMode === 'gallery';
+  const isWebLoading = ocrMode === 'web-upload';
   const isAnyOcrLoading = ocrMode !== null;
 
   return (
@@ -190,12 +195,17 @@ export default function ManualInputScreen({ route, navigation }) {
       )}
 
       {Platform.OS === 'web' && (
-        <View style={styles.webNoticeBox}>
-          <Text style={styles.webNoticeText}>
-            OCR is currently supported on the mobile app only. On the browser, please paste
-            ingredients manually.
-          </Text>
-        </View>
+        <Pressable
+          style={[styles.secondaryButton, isWebLoading && styles.disabledButton]}
+          onPress={() => handleImageSelection('gallery')}
+          disabled={isAnyOcrLoading || loading}
+        >
+          {isWebLoading ? (
+            <ActivityIndicator color="#222" />
+          ) : (
+            <Text style={styles.secondaryButtonText}>Upload Image for OCR</Text>
+          )}
+        </Pressable>
       )}
 
       <Pressable
@@ -263,17 +273,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 13,
     color: '#666',
-  },
-  webNoticeBox: {
-    marginTop: 12,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#f2f2f2',
-  },
-  webNoticeText: {
-    fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
   },
   primaryButton: {
     marginTop: 24,
