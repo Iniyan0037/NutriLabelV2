@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 if (!BASE_URL) {
@@ -65,11 +67,27 @@ export async function fetchProductByBarcode(barcode, selectedProfiles) {
 export async function uploadImageForOCR(imageSource) {
   const formData = new FormData();
 
-  formData.append('image', {
-    uri: imageSource.uri,
-    name: imageSource.fileName || 'ingredients.jpg',
-    type: imageSource.mimeType || 'image/jpeg',
-  });
+  if (Platform.OS === 'web') {
+    if (imageSource?.file) {
+      formData.append(
+        'image',
+        imageSource.file,
+        imageSource.file.name || 'ingredients.jpg'
+      );
+    } else if (imageSource?.uri) {
+      const fetched = await fetch(imageSource.uri);
+      const blob = await fetched.blob();
+      formData.append('image', blob, 'ingredients.jpg');
+    } else {
+      throw new Error('No image file was selected.');
+    }
+  } else {
+    formData.append('image', {
+      uri: imageSource.uri,
+      name: imageSource.fileName || 'ingredients.jpg',
+      type: imageSource.mimeType || 'image/jpeg',
+    });
+  }
 
   const response = await fetch(`${BASE_URL}/ocr`, {
     method: 'POST',
