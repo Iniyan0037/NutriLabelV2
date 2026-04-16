@@ -180,7 +180,7 @@ def ocr():
             "https://api.ocr.space/parse/image",
             files=files,
             data=data,
-            timeout=60,
+            timeout=120,
         )
 
         response.raise_for_status()
@@ -281,7 +281,7 @@ def ocr():
     except requests.Timeout:
         return jsonify({
             "error": "OCR request timed out",
-            "details": "The OCR service took too long to respond. Try a smaller or more tightly cropped image."
+            "details": "The OCR service took too long to respond. Please try a more tightly cropped image."
         }), 504
     except requests.RequestException as e:
         return jsonify({
