@@ -1,9 +1,8 @@
 import re
 
-from db import lookup_rule
+from db import SessionLocal, Rule, Alias, ENumber, Allergen
 
-
-RESTRICTION_PROFILES = {
+VALID_PROFILES = {
     "vegan",
     "vegetarian",
     "eggetarian",
@@ -14,324 +13,279 @@ RESTRICTION_PROFILES = {
     "gluten-free",
 }
 
+STATUS_PRIORITY = {
+    "Allowed": 0,
+    "Uncertain": 1,
+    "Restricted": 2,
+}
+
+
+def normalize_profile(profile):
+    if profile == "jain":
+        return "Jain"
+    return profile
+
 
 def normalize_profiles(selected_profiles):
-    normalized = []
+    profiles = []
+
     for profile in selected_profiles or []:
-        if isinstance(profile, str) and profile in RESTRICTION_PROFILES:
-            normalized.append(profile)
-    return normalized
+        if not isinstance(profile, str):
+            continue
+
+        normalized = normalize_profile(profile.strip())
+
+        if normalized in VALID_PROFILES and normalized not in profiles:
+            profiles.append(normalized)
+
+    return profiles
 
 
-def clean_ocr_text(text):
-    if not isinstance(text, str):
-        return ""
-
-    cleaned = text.lower()
-
-    cleaned = cleaned.replace("\r", "\n")
-    cleaned = cleaned.replace("(", " (")
-    cleaned = cleaned.replace(")", ") ")
-
-    # remove common OCR-broken percentage patterns
-    cleaned = re.sub(r"\b\d+([./]\d+)?\s*%\b", " ", cleaned)
-    cleaned = re.sub(r"\b\d+\s*/\s*\d+\b", " ", cleaned)
-    cleaned = re.sub(r"\b\d+[./]\d+\b", " ", cleaned)
-
-    # remove headings / summary lines that should not become ingredients
-    cleaned = re.sub(r"\bcontains\b[: ]*", ", ", cleaned)
-    cleaned = re.sub(r"\bmay contain\b[: ]*", ", ", cleaned)
-    cleaned = re.sub(r"\btotal milk solids\b[: ]*", " ", cleaned)
-    cleaned = re.sub(r"\btotal cocoa solids\b[: ]*", " ", cleaned)
-    cleaned = re.sub(r"\bnutrition[a-z ]*\b", " ", cleaned)
-    cleaned = re.sub(r"\ballergen[a-z ]*\b", " ", cleaned)
-
-    # keep useful ingredient parentheses but remove pure-number parentheses
-    cleaned = re.sub(r"\(\s*\d+([./]\d+)?\s*%?\s*\)", " ", cleaned)
-
-    # remove stray punctuation except commas/hyphens/colons
-    cleaned = re.sub(r"[^\w\s,%:\-]", " ", cleaned)
-
-    # normalize spaces/newlines
-    cleaned = cleaned.replace("\n", ", ")
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
-
-    return cleaned.strip()
+def clean_ingredient_text(text):
+    text = text or ""
+    text = text.lower()
+    text = re.sub(r"ingredients?:", "", text)
+    text = re.sub(r"may contain.*", "", text)
+    text = re.sub(r"\([^)]*\)", " ", text)
+    text = re.sub(r"\d+(\.\d+)?\s*%", " ", text)
+    text = re.sub(r"[^a-z0-9,\- ]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def split_ingredients(text):
-    if not isinstance(text, str) or not text.strip():
+    cleaned = clean_ingredient_text(text)
+
+    if not cleaned:
         return []
 
-    cleaned = clean_ocr_text(text)
-
-    parts = re.split(r",|;|\.", cleaned)
-    results = []
+    parts = re.split(r",|;", cleaned)
+    ingredients = []
 
     for part in parts:
-        item = part.strip().lower()
+        item = part.strip()
+        if item and item not in ingredients:
+            ingredients.append(item)
 
-        if not item:
+    return ingredients
+
+
+def extract_e_numbers(text):
+    if not text:
+        return []
+
+    matches = re.findall(r"\be\s*-?\s*(\d{3,4}[a-z]?)\b", text.lower())
+    return list(dict.fromkeys([f"e{match}".replace(" ", "").replace("-", "") for match in matches]))
+
+
+def stronger_status(current, new):
+    return new if STATUS_PRIORITY.get(new, 0) > STATUS_PRIORITY.get(current, 0) else current
+
+
+def resolve_alias(db, ingredient):
+    normalized = ingredient.lower().strip()
+
+    alias = db.query(Alias).filter(Alias.alias_name == normalized).first()
+
+    if alias:
+        return alias.actual_name.lower().strip()
+
+    return normalized
+
+
+def get_rules_for_name(db, name, selected_profiles):
+    return (
+        db.query(Rule)
+        .filter(
+            Rule.ingredient_name == name,
+            Rule.profile.in_(selected_profiles),
+        )
+        .all()
+    )
+
+
+def get_e_number_info(db, name):
+    return db.query(ENumber).filter(ENumber.e_number == name.lower()).first()
+
+
+def get_allergen_matches(db, name, selected_profiles):
+    return (
+        db.query(Allergen)
+        .filter(
+            Allergen.ingredient_name == name,
+            Allergen.allergen_type.in_(selected_profiles),
+        )
+        .all()
+    )
+
+
+def evaluate_single_ingredient(db, original_ingredient, selected_profiles):
+    canonical_name = resolve_alias(db, original_ingredient)
+
+    final_status = "Allowed"
+    reasons = []
+    matched_profiles = []
+    match_type = "direct"
+
+    rules = get_rules_for_name(db, canonical_name, selected_profiles)
+
+    for rule in rules:
+        final_status = stronger_status(final_status, rule.status)
+        reasons.append(rule.reason)
+        matched_profiles.append(rule.profile)
+
+    allergen_matches = get_allergen_matches(db, canonical_name, selected_profiles)
+
+    for allergen in allergen_matches:
+        final_status = stronger_status(final_status, "Restricted")
+        reasons.append(
+            f"{canonical_name} conflicts with the selected {allergen.allergen_type} profile."
+        )
+        matched_profiles.append(allergen.allergen_type)
+        match_type = "allergen"
+
+    e_number_info = get_e_number_info(db, canonical_name)
+
+    if e_number_info:
+        match_type = "e_number"
+
+        if not rules:
+            if e_number_info.halal_status and "halal" in selected_profiles:
+                halal_status = e_number_info.halal_status.lower()
+
+                if "haram" in halal_status or "not halal" in halal_status:
+                    final_status = stronger_status(final_status, "Restricted")
+                    reasons.append(
+                        f"{canonical_name.upper()} ({e_number_info.name}) is marked as not halal in the additives dataset."
+                    )
+                    matched_profiles.append("halal")
+                elif "mushbooh" in halal_status or "doubt" in halal_status or "unknown" in halal_status:
+                    final_status = stronger_status(final_status, "Uncertain")
+                    reasons.append(
+                        f"{canonical_name.upper()} ({e_number_info.name}) may require halal verification."
+                    )
+                    matched_profiles.append("halal")
+
+            if final_status == "Allowed":
+                reasons.append(
+                    f"{canonical_name.upper()} ({e_number_info.name}) was found in the additives dataset with no selected-profile restriction."
+                )
+
+    if not rules and not allergen_matches and not e_number_info:
+        final_status = "Uncertain"
+        reasons.append(
+            "No matching rule was found in the database, so this ingredient is marked as uncertain."
+        )
+
+    return {
+        "ingredient": original_ingredient,
+        "matched_name": canonical_name,
+        "status": final_status,
+        "matched_profiles": list(dict.fromkeys(matched_profiles)),
+        "reason": " ".join(dict.fromkeys(reasons)),
+        "match_type": match_type,
+    }
+
+
+def evaluate_external_tags(db, tags, selected_profiles, tag_type):
+    results = []
+
+    for tag in tags or []:
+        if not isinstance(tag, str):
             continue
 
-        # remove leftover percentages and numbers
-        item = re.sub(r"\b\d+([./]\d+)?\s*%?\b", " ", item)
+        cleaned = tag.lower().strip()
 
-        # remove generic prefixes
-        item = re.sub(r"^(ingredients?|contains|may contain)\s*:?\s*", "", item)
+        if ":" in cleaned:
+            cleaned = cleaned.split(":")[-1]
 
-        # collapse spaces again
-        item = re.sub(r"\s+", " ", item).strip()
+        cleaned = cleaned.replace("_", " ").strip()
 
-        if not item:
+        if not cleaned:
             continue
 
-        # skip obvious garbage fragments
-        if len(item) <= 1:
-            continue
-        if re.fullmatch(r"[\d\s%./\-]+", item):
-            continue
-
-        results.append(item)
+        result = evaluate_single_ingredient(db, cleaned, selected_profiles)
+        result["source"] = tag_type
+        results.append(result)
 
     return results
 
 
-def normalize_possible_additive_code(raw):
-    if not isinstance(raw, str):
-        return None
+def calculate_overall_status(items):
+    status = "Allowed"
 
-    value = raw.lower().replace(" ", "").replace("-", "")
-    value = value.replace("l", "1")
+    for item in items:
+        status = stronger_status(status, item.get("status", "Allowed"))
 
-    if value.endswith("i") and len(value) >= 3 and value[:-1].isdigit():
-        value = value[:-1] + "1"
-
-    if value.isdigit() and len(value) in (3, 4):
-        return f"e{value}"
-
-    if re.match(r"^e\d{3,4}[a-z]?$", value):
-        return value
-
-    return None
+    return status
 
 
-def extract_e_numbers_from_text(text):
-    if not isinstance(text, str):
-        return []
+def analyze_ingredients(
+    ingredient_text,
+    selected_profiles,
+    additives_tags=None,
+    allergens_tags=None,
+):
+    profiles = normalize_profiles(selected_profiles)
 
-    rough_matches = re.findall(r"\be\s*-?\s*([0-9]{2,4}[a-zil]?)\b", text.lower())
-    codes = []
-
-    for match in rough_matches:
-        normalized = normalize_possible_additive_code(match)
-        if normalized:
-            codes.append(normalized)
-
-    return list(dict.fromkeys(codes))
-
-
-def normalize_additive_tag(tag):
-    if not isinstance(tag, str):
-        return None
-
-    value = tag.lower().strip()
-    if ":" in value:
-        value = value.split(":")[-1]
-
-    value = value.replace("_", "").replace("-", "").strip()
-
-    return normalize_possible_additive_code(value)
-
-
-def choose_stronger_status(current_status, new_status):
-    order = {
-        "Allowed": 0,
-        "Uncertain": 1,
-        "Restricted": 2,
-    }
-    return new_status if order[new_status] > order[current_status] else current_status
-
-
-def combine_rule_rows(display_name, rows):
-    final_status = "Allowed"
-    reasons = []
-
-    for row in rows:
-        status = row["status"]
-        reason = row["reason"]
-        final_status = choose_stronger_status(final_status, status)
-
-        if reason not in reasons:
-            reasons.append(reason)
-
-        if final_status == "Restricted":
-            break
-
-    return {
-        "name": display_name,
-        "status": final_status,
-        "reason": " ".join(reasons) if reasons else "No restriction conflict found.",
-    }
-
-
-def evaluate_ingredient(name, selected_profiles):
-    ingredient_name = (name or "").strip().lower()
-    if not ingredient_name:
-        return None
-
-    rule_rows = lookup_rule("ingredient", ingredient_name, selected_profiles)
-
-    if rule_rows == "__KNOWN_BUT_NO_CONFLICT__":
+    if not profiles:
         return {
-            "name": ingredient_name,
-            "status": "Allowed",
-            "reason": "No restriction conflict found.",
+            "status": "Uncertain",
+            "selected_profiles": [],
+            "ingredients_analysis": [],
+            "summary": "No dietary profile was selected.",
         }
 
-    if rule_rows:
-        return combine_rule_rows(ingredient_name, rule_rows)
+    ingredient_list = split_ingredients(ingredient_text)
+    e_numbers = extract_e_numbers(ingredient_text)
 
-    return {
-        "name": ingredient_name,
-        "status": "Uncertain",
-        "reason": "This ingredient is not currently covered by the database rules.",
-    }
+    for e_number in e_numbers:
+        if e_number not in ingredient_list:
+            ingredient_list.append(e_number)
 
+    db = SessionLocal()
 
-def evaluate_additive(code, selected_profiles):
-    additive_code = (code or "").strip().lower()
-    if not additive_code:
-        return None
+    try:
+        ingredient_results = [
+            evaluate_single_ingredient(db, ingredient, profiles)
+            for ingredient in ingredient_list
+        ]
 
-    rule_rows = lookup_rule("additive", additive_code, selected_profiles)
+        additive_results = evaluate_external_tags(
+            db,
+            additives_tags or [],
+            profiles,
+            "open_food_facts_additive",
+        )
 
-    if rule_rows == "__KNOWN_BUT_NO_CONFLICT__":
+        allergen_results = evaluate_external_tags(
+            db,
+            allergens_tags or [],
+            profiles,
+            "open_food_facts_allergen",
+        )
+
+        all_results = ingredient_results + additive_results + allergen_results
+        overall_status = calculate_overall_status(all_results)
+
         return {
-            "name": additive_code,
-            "status": "Allowed",
-            "reason": "No restriction conflict found for this additive.",
+            "status": overall_status,
+            "selected_profiles": profiles,
+            "ingredients_analysis": ingredient_results,
+            "additives_analysis": additive_results,
+            "allergens_analysis": allergen_results,
+            "summary": build_summary(overall_status, profiles),
         }
-
-    if rule_rows:
-        return combine_rule_rows(additive_code, rule_rows)
-
-    return {
-        "name": additive_code,
-        "status": "Uncertain",
-        "reason": "This additive is not currently covered by the database rules.",
-    }
+    finally:
+        db.close()
 
 
-def evaluate_allergen(tag, selected_profiles):
-    allergen_tag = (tag or "").strip().lower()
-    if not allergen_tag:
-        return None
+def build_summary(status, selected_profiles):
+    profile_text = ", ".join(selected_profiles)
 
-    rule_rows = lookup_rule("allergen", allergen_tag, selected_profiles)
+    if status == "Restricted":
+        return f"This product is not suitable for the selected profile(s): {profile_text}."
+    if status == "Uncertain":
+        return f"This product needs further checking for the selected profile(s): {profile_text}."
 
-    if rule_rows == "__KNOWN_BUT_NO_CONFLICT__":
-        return {
-            "name": allergen_tag,
-            "status": "Allowed",
-            "reason": "No restriction conflict found for this allergen tag.",
-        }
-
-    if rule_rows:
-        return combine_rule_rows(allergen_tag, rule_rows)
-
-    return {
-        "name": allergen_tag,
-        "status": "Uncertain",
-        "reason": "This allergen tag is not currently covered by the database rules.",
-    }
-
-
-def deduplicate_results(results):
-    deduped = {}
-
-    for item in results:
-        if not item:
-            continue
-
-        key = item["name"].strip().lower()
-
-        if key not in deduped:
-            deduped[key] = item
-        else:
-            existing = deduped[key]
-            stronger = choose_stronger_status(existing["status"], item["status"])
-
-            if stronger != existing["status"]:
-                deduped[key] = item
-            elif item["reason"] not in existing["reason"]:
-                existing["reason"] = f"{existing['reason']} {item['reason']}".strip()
-
-    return list(deduped.values())
-
-
-def get_overall_result(results):
-    if any(item["status"] == "Restricted" for item in results):
-        return "Restricted"
-    if any(item["status"] == "Uncertain" for item in results):
-        return "Uncertain"
-    return "Safe"
-
-
-def build_summary(overall_result):
-    if overall_result == "Restricted":
-        return "This product is not suitable for your selected dietary restrictions."
-    if overall_result == "Uncertain":
-        return "This product may not be suitable for your selected dietary restrictions."
-    if overall_result == "Safe":
-        return "This product appears suitable for your selected dietary restrictions."
-    return "No ingredients were available for analysis."
-
-
-def analyze_ingredients(ingredient_text, selected_profiles, additives_tags=None, allergens_tags=None):
-    normalized_profiles = normalize_profiles(selected_profiles)
-    ingredient_items = split_ingredients(ingredient_text)
-    text_e_numbers = extract_e_numbers_from_text(ingredient_text)
-
-    additive_codes = []
-    for tag in additives_tags or []:
-        normalized = normalize_additive_tag(tag)
-        if normalized:
-            additive_codes.append(normalized)
-
-    additive_codes.extend(text_e_numbers)
-    additive_codes = list(dict.fromkeys(additive_codes))
-
-    allergen_items = [tag for tag in (allergens_tags or []) if isinstance(tag, str)]
-    results = []
-
-    for ingredient in ingredient_items:
-        evaluated = evaluate_ingredient(ingredient, normalized_profiles)
-        if evaluated:
-            results.append(evaluated)
-
-    for additive_code in additive_codes:
-        evaluated = evaluate_additive(additive_code, normalized_profiles)
-        if evaluated:
-            results.append(evaluated)
-
-    for allergen in allergen_items:
-        evaluated = evaluate_allergen(allergen, normalized_profiles)
-        if evaluated:
-            results.append(evaluated)
-
-    results = deduplicate_results(results)
-
-    if not results:
-        overall_result = "Uncertain"
-        summary = "No ingredients were available for analysis."
-    else:
-        overall_result = get_overall_result(results)
-        summary = build_summary(overall_result)
-
-    return {
-        "overall_result": overall_result,
-        "summary": summary,
-        "ingredients": results,
-    }
+    return f"No restriction conflict was found for the selected profile(s): {profile_text}."
