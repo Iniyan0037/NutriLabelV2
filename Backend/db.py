@@ -95,41 +95,103 @@ class History(Base):
 
 
 SEED_RULES = [
+    # Common safe/simple ingredients
     ("sugar", "vegan", "Allowed", "Sugar has no direct vegan restriction in the current rules."),
+    ("sugar", "vegetarian", "Allowed", "Sugar has no direct vegetarian restriction in the current rules."),
+    ("salt", "vegan", "Allowed", "Salt has no direct vegan restriction."),
+    ("water", "vegan", "Allowed", "Water has no direct dietary restriction."),
     ("vegetable oil", "vegan", "Allowed", "Vegetable oil is plant-derived."),
-    ("cocoa powder", "vegan", "Allowed", "Cocoa powder has no direct vegan restriction in the current rules."),
+    ("sunflower oil", "vegan", "Allowed", "Sunflower oil is plant-derived."),
+    ("canola oil", "vegan", "Allowed", "Canola oil is plant-derived."),
+    ("olive oil", "vegan", "Allowed", "Olive oil is plant-derived."),
+    ("cocoa powder", "vegan", "Allowed", "Cocoa powder has no direct vegan restriction."),
+    ("cocoa butter", "vegan", "Allowed", "Cocoa butter is plant-derived."),
+    ("cocoa mass", "vegan", "Allowed", "Cocoa mass is plant-derived."),
+    ("corn starch", "vegan", "Allowed", "Corn starch is plant-derived."),
+    ("rice flour", "vegan", "Allowed", "Rice flour is plant-derived."),
+    ("maize starch", "vegan", "Allowed", "Maize starch is plant-derived."),
+    ("soy", "vegan", "Allowed", "Soy is plant-derived."),
+    ("soy", "nut-free", "Allowed", "Soy is not a tree nut, but users with soy allergy should verify separately."),
     ("flavouring", "vegan", "Uncertain", "Flavouring may require source verification."),
+    ("natural flavouring", "vegan", "Uncertain", "Natural flavouring may require source verification."),
+    ("artificial flavouring", "vegan", "Uncertain", "Artificial flavouring may require source verification."),
+    ("enzymes", "vegan", "Uncertain", "Enzymes may be plant, microbial, or animal-derived depending on source."),
+    ("emulsifier", "vegan", "Uncertain", "Generic emulsifier source may require verification."),
 
+    # Dairy
     ("milk", "vegan", "Restricted", "Milk is animal-derived and not suitable for vegan diets."),
     ("milk", "dairy-free", "Restricted", "Milk conflicts with dairy-free diets."),
+    ("milk", "vegetarian", "Allowed", "Milk is generally allowed for vegetarian diets."),
     ("whey", "vegan", "Restricted", "Whey is dairy-derived and not suitable for vegan diets."),
     ("whey", "dairy-free", "Restricted", "Whey conflicts with dairy-free diets."),
     ("casein", "vegan", "Restricted", "Casein is dairy-derived and not suitable for vegan diets."),
     ("casein", "dairy-free", "Restricted", "Casein conflicts with dairy-free diets."),
     ("lactose", "vegan", "Restricted", "Lactose is dairy-derived and not suitable for vegan diets."),
     ("lactose", "dairy-free", "Restricted", "Lactose conflicts with dairy-free diets."),
+    ("cream", "vegan", "Restricted", "Cream is dairy-derived and not suitable for vegan diets."),
+    ("cream", "dairy-free", "Restricted", "Cream conflicts with dairy-free diets."),
+    ("butter", "vegan", "Restricted", "Butter is dairy-derived and not suitable for vegan diets."),
+    ("butter", "dairy-free", "Restricted", "Butter conflicts with dairy-free diets."),
+    ("cheese", "vegan", "Restricted", "Cheese is dairy-derived and not suitable for vegan diets."),
+    ("cheese", "dairy-free", "Restricted", "Cheese conflicts with dairy-free diets."),
+    ("yogurt", "vegan", "Restricted", "Yogurt is dairy-derived and not suitable for vegan diets."),
+    ("yogurt", "dairy-free", "Restricted", "Yogurt conflicts with dairy-free diets."),
 
+    # Egg
     ("egg", "vegan", "Restricted", "Egg is not suitable for vegan diets."),
     ("egg", "Jain", "Restricted", "Egg conflicts with Jain dietary restrictions."),
     ("eggs", "vegan", "Restricted", "Eggs are not suitable for vegan diets."),
     ("eggs", "Jain", "Restricted", "Eggs conflict with Jain dietary restrictions."),
+    ("albumen", "vegan", "Restricted", "Albumen is egg-derived and not suitable for vegan diets."),
+    ("albumen", "Jain", "Restricted", "Albumen is egg-derived and conflicts with Jain dietary restrictions."),
 
+    # Animal-derived / meat / seafood
     ("gelatin", "vegan", "Restricted", "Gelatin is animal-derived and not suitable for vegan diets."),
     ("gelatin", "vegetarian", "Restricted", "Gelatin is not suitable for vegetarian diets."),
     ("gelatin", "eggetarian", "Restricted", "Gelatin is not suitable for eggetarian diets."),
     ("gelatin", "Jain", "Restricted", "Gelatin conflicts with Jain dietary restrictions."),
     ("gelatin", "halal", "Uncertain", "Gelatin source may require halal certification verification."),
-
+    ("beef", "vegan", "Restricted", "Beef is animal-derived and not suitable for vegan diets."),
+    ("beef", "vegetarian", "Restricted", "Beef is not suitable for vegetarian diets."),
+    ("beef", "halal", "Uncertain", "Beef requires halal certification verification."),
+    ("chicken", "vegan", "Restricted", "Chicken is animal-derived and not suitable for vegan diets."),
+    ("chicken", "vegetarian", "Restricted", "Chicken is not suitable for vegetarian diets."),
+    ("chicken", "halal", "Uncertain", "Chicken requires halal certification verification."),
+    ("pork", "vegan", "Restricted", "Pork is animal-derived and not suitable for vegan diets."),
+    ("pork", "vegetarian", "Restricted", "Pork is not suitable for vegetarian diets."),
+    ("pork", "halal", "Restricted", "Pork is not suitable for halal diets."),
+    ("fish", "vegan", "Restricted", "Fish is animal-derived and not suitable for vegan diets."),
+    ("fish", "vegetarian", "Restricted", "Fish is not suitable for vegetarian diets."),
+    ("fish", "Jain", "Restricted", "Fish conflicts with Jain dietary restrictions."),
+    ("shellfish", "vegan", "Restricted", "Shellfish is animal-derived and not suitable for vegan diets."),
+    ("shellfish", "vegetarian", "Restricted", "Shellfish is not suitable for vegetarian diets."),
     ("honey", "vegan", "Restricted", "Honey is animal-derived and not suitable for vegan diets."),
+    ("lard", "vegan", "Restricted", "Lard is animal-derived and not suitable for vegan diets."),
+    ("lard", "vegetarian", "Restricted", "Lard is not suitable for vegetarian diets."),
+    ("lard", "halal", "Restricted", "Lard is commonly pork-derived and not suitable for halal diets."),
+    ("tallow", "vegan", "Restricted", "Tallow is animal-derived and not suitable for vegan diets."),
+    ("tallow", "vegetarian", "Restricted", "Tallow is not suitable for vegetarian diets."),
+    ("rennet", "vegan", "Uncertain", "Rennet may be animal-derived and requires source verification."),
+    ("rennet", "vegetarian", "Uncertain", "Rennet may be animal-derived and requires source verification."),
 
+    # Jain
     ("onion", "Jain", "Restricted", "Onion conflicts with Jain dietary restrictions."),
     ("garlic", "Jain", "Restricted", "Garlic conflicts with Jain dietary restrictions."),
     ("potato", "Jain", "Restricted", "Potato is a root vegetable and conflicts with Jain dietary restrictions."),
+    ("carrot", "Jain", "Restricted", "Carrot is a root vegetable and may conflict with Jain dietary restrictions."),
+    ("beetroot", "Jain", "Restricted", "Beetroot is a root vegetable and may conflict with Jain dietary restrictions."),
+    ("radish", "Jain", "Restricted", "Radish is a root vegetable and may conflict with Jain dietary restrictions."),
+    ("mushroom", "Jain", "Restricted", "Mushroom may conflict with Jain dietary restrictions."),
 
+    # Gluten
     ("wheat", "gluten-free", "Restricted", "Wheat contains gluten and conflicts with gluten-free diets."),
     ("barley", "gluten-free", "Restricted", "Barley contains gluten and conflicts with gluten-free diets."),
     ("rye", "gluten-free", "Restricted", "Rye contains gluten and conflicts with gluten-free diets."),
+    ("oats", "gluten-free", "Uncertain", "Oats may be contaminated with gluten unless certified gluten-free."),
+    ("malt", "gluten-free", "Restricted", "Malt is commonly barley-derived and may contain gluten."),
+    ("gluten", "gluten-free", "Restricted", "Gluten conflicts with gluten-free diets."),
 
+    # Nuts
     ("peanut", "nut-free", "Restricted", "Peanut conflicts with nut-free diets."),
     ("hazelnut", "nut-free", "Restricted", "Hazelnut conflicts with nut-free diets."),
     ("almond", "nut-free", "Restricted", "Almond conflicts with nut-free diets."),
@@ -138,39 +200,62 @@ SEED_RULES = [
     ("pistachio", "nut-free", "Restricted", "Pistachio conflicts with nut-free diets."),
     ("pecan", "nut-free", "Restricted", "Pecan conflicts with nut-free diets."),
     ("macadamia", "nut-free", "Restricted", "Macadamia conflicts with nut-free diets."),
+    ("brazil nut", "nut-free", "Restricted", "Brazil nut conflicts with nut-free diets."),
+    ("pine nut", "nut-free", "Restricted", "Pine nut conflicts with nut-free diets."),
 
-    ("soy", "vegan", "Allowed", "Soy is plant-derived."),
-    ("soy", "nut-free", "Allowed", "Soy is not a tree nut, but users with soy allergy should verify separately."),
+    # Alcohol / halal
+    ("alcohol", "halal", "Restricted", "Alcohol is not suitable for halal diets."),
+    ("ethanol", "halal", "Restricted", "Ethanol/alcohol is not suitable for halal diets."),
+    ("wine", "halal", "Restricted", "Wine is alcohol-based and not suitable for halal diets."),
+    ("beer", "halal", "Restricted", "Beer is alcohol-based and not suitable for halal diets."),
+    ("rum", "halal", "Restricted", "Rum is alcohol-based and not suitable for halal diets."),
 
+    # Additives
     ("e120", "vegan", "Restricted", "E120 is cochineal/carmine and is insect-derived."),
     ("e120", "vegetarian", "Restricted", "E120 is insect-derived."),
     ("e120", "Jain", "Restricted", "E120 is insect-derived and conflicts with Jain dietary restrictions."),
     ("e120", "halal", "Uncertain", "E120 source and certification may require halal verification."),
-
     ("e322", "vegan", "Uncertain", "E322/lecithin may be plant or animal derived depending on source."),
     ("e322", "halal", "Uncertain", "E322 source may require halal verification."),
-
     ("e441", "vegan", "Restricted", "E441 is gelatin and is animal-derived."),
     ("e441", "vegetarian", "Restricted", "E441 is gelatin and is not suitable for vegetarian diets."),
     ("e441", "Jain", "Restricted", "E441 conflicts with Jain dietary restrictions."),
     ("e441", "halal", "Uncertain", "E441 source may require halal verification."),
-
     ("e471", "vegan", "Uncertain", "E471 may be derived from plant or animal sources."),
     ("e471", "halal", "Uncertain", "E471 origin may require halal verification."),
+    ("e472", "vegan", "Uncertain", "E472 may be derived from plant or animal sources."),
+    ("e472", "halal", "Uncertain", "E472 origin may require halal verification."),
+    ("e542", "vegan", "Restricted", "E542 is bone phosphate and is animal-derived."),
+    ("e542", "vegetarian", "Restricted", "E542 is bone-derived and not suitable for vegetarian diets."),
+    ("e904", "vegan", "Restricted", "E904 shellac is insect-derived and not suitable for vegan diets."),
 ]
 
 
 SEED_ALIASES = [
+    # Sugar/salt/basic
     ("sucrose", "sugar"),
     ("cane sugar", "sugar"),
     ("white sugar", "sugar"),
     ("raw sugar", "sugar"),
+    ("brown sugar", "sugar"),
+    ("icing sugar", "sugar"),
+    ("glucose syrup", "sugar"),
+    ("fructose syrup", "sugar"),
+    ("corn syrup", "sugar"),
+    ("sea salt", "salt"),
+    ("sodium chloride", "salt"),
 
+    # Oils
     ("vegetable oils", "vegetable oil"),
     ("palm oil", "vegetable oil"),
-    ("sunflower oil", "vegetable oil"),
-    ("canola oil", "vegetable oil"),
+    ("sunflower oil", "sunflower oil"),
+    ("canola oil", "canola oil"),
+    ("rapeseed oil", "canola oil"),
+    ("olive oil", "olive oil"),
+    ("coconut oil", "vegetable oil"),
+    ("cocoa butter", "cocoa butter"),
 
+    # Dairy
     ("skim milk powder", "milk"),
     ("skimmed milk powder", "milk"),
     ("milk powder", "milk"),
@@ -180,204 +265,31 @@ SEED_ALIASES = [
     ("milk solids", "milk"),
     ("total milk solids", "milk"),
     ("dairy solids", "milk"),
-    ("cream", "milk"),
-    ("butter", "milk"),
+    ("milk fat", "milk"),
+    ("buttermilk powder", "milk"),
+    ("cream powder", "cream"),
+    ("whey powder", "whey"),
+    ("whey protein", "whey"),
+    ("whey protein concentrate", "whey"),
+    ("caseinate", "casein"),
+    ("sodium caseinate", "casein"),
+    ("calcium caseinate", "casein"),
+    ("lactose powder", "lactose"),
+    ("cheese powder", "cheese"),
+    ("yoghurt", "yogurt"),
 
-    ("hazelnuts", "hazelnut"),
-    ("hazelnut pieces", "hazelnut"),
-    ("almonds", "almond"),
-    ("cashews", "cashew"),
-    ("walnuts", "walnut"),
-    ("peanuts", "peanut"),
-    ("pistachios", "pistachio"),
-    ("pecans", "pecan"),
+    # Egg
+    ("egg white", "egg"),
+    ("egg yolk", "egg"),
+    ("whole egg", "egg"),
+    ("dried egg", "egg"),
+    ("egg powder", "egg"),
+    ("albumin", "albumen"),
+    ("egg albumen", "albumen"),
 
-    ("soy lecithin", "e322"),
-    ("soya lecithin", "e322"),
-    ("lecithin", "e322"),
-    ("emulsifier soy lecithin", "e322"),
-    ("emulsifier soya lecithin", "e322"),
-    ("emulsifier lecithin", "e322"),
-
-    ("mono- and diglycerides of fatty acids", "e471"),
-    ("mono and diglycerides of fatty acids", "e471"),
-    ("mono-diglycerides of fatty acids", "e471"),
-
+    # Animal/meat/fish
     ("gelatine", "gelatin"),
-    ("fat reduced cocoa powder", "cocoa powder"),
-    ("fat-reduced cocoa powder", "cocoa powder"),
-    ("cocoa", "cocoa powder"),
-    ("vanillin", "flavouring"),
-    ("flavoring", "flavouring"),
-    ("natural flavouring", "flavouring"),
-    ("artificial flavouring", "flavouring"),
-]
-
-
-SEED_ALLERGENS = [
-    ("milk", "dairy-free"),
-    ("whey", "dairy-free"),
-    ("casein", "dairy-free"),
-    ("lactose", "dairy-free"),
-
-    ("peanut", "nut-free"),
-    ("hazelnut", "nut-free"),
-    ("almond", "nut-free"),
-    ("cashew", "nut-free"),
-    ("walnut", "nut-free"),
-    ("pistachio", "nut-free"),
-    ("pecan", "nut-free"),
-    ("macadamia", "nut-free"),
-
-    ("wheat", "gluten-free"),
-    ("barley", "gluten-free"),
-    ("rye", "gluten-free"),
-
-    ("egg", "vegan"),
-    ("eggs", "vegan"),
-]
-
-
-def clean_value(value):
-    return str(value or "").strip()
-
-
-def clean_lower(value):
-    return clean_value(value).lower()
-
-
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    seed_core_data()
-    seed_e_numbers_from_csv()
-
-
-def seed_core_data():
-    db = SessionLocal()
-
-    try:
-        for ingredient_name, profile, status, reason in SEED_RULES:
-            statement = insert(Rule).values(
-                ingredient_name=ingredient_name.lower(),
-                profile=profile,
-                status=status,
-                reason=reason,
-            )
-            statement = statement.on_conflict_do_update(
-                constraint="uq_rule_ingredient_profile",
-                set_={
-                    "status": status,
-                    "reason": reason,
-                },
-            )
-            db.execute(statement)
-
-        for alias_name, actual_name in SEED_ALIASES:
-            statement = insert(Alias).values(
-                alias_name=alias_name.lower(),
-                actual_name=actual_name.lower(),
-            )
-            statement = statement.on_conflict_do_update(
-                index_elements=["alias_name"],
-                set_={"actual_name": actual_name.lower()},
-            )
-            db.execute(statement)
-
-        for ingredient_name, allergen_type in SEED_ALLERGENS:
-            statement = insert(Allergen).values(
-                ingredient_name=ingredient_name.lower(),
-                allergen_type=allergen_type,
-            )
-            statement = statement.on_conflict_do_nothing(
-                constraint="uq_allergen_ingredient_type"
-            )
-            db.execute(statement)
-
-        db.commit()
-
-    except Exception:
-        db.rollback()
-        raise
-
-    finally:
-        db.close()
-
-
-def seed_e_numbers_from_csv():
-    csv_path = Path(__file__).parent / "data" / "additives.csv"
-
-    if not csv_path.exists():
-        return
-
-    db = SessionLocal()
-
-    try:
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-
-            for row in reader:
-                e_number = clean_lower(row.get("e_code"))
-                name = clean_value(row.get("title"))
-                notes = clean_value(row.get("info"))
-                e_type = clean_value(row.get("e_type"))
-                halal_status = clean_value(row.get("halal_status"))
-
-                if not e_number or not name:
-                    continue
-
-                e_number_statement = insert(ENumber).values(
-                    e_number=e_number,
-                    name=name,
-                    origin=None,
-                    notes=notes,
-                    e_type=e_type,
-                    halal_status=halal_status,
-                )
-                e_number_statement = e_number_statement.on_conflict_do_update(
-                    index_elements=["e_number"],
-                    set_={
-                        "name": name,
-                        "notes": notes,
-                        "e_type": e_type,
-                        "halal_status": halal_status,
-                    },
-                )
-                db.execute(e_number_statement)
-
-                alias_name = name.lower().strip()
-
-                if alias_name:
-                    alias_statement = insert(Alias).values(
-                        alias_name=alias_name,
-                        actual_name=e_number,
-                    )
-                    alias_statement = alias_statement.on_conflict_do_nothing(
-                        index_elements=["alias_name"]
-                    )
-                    db.execute(alias_statement)
-
-        db.commit()
-
-    except Exception:
-        db.rollback()
-        raise
-
-    finally:
-        db.close()
-
-
-def db_status_counts():
-    db = SessionLocal()
-
-    try:
-        return {
-            "rules_count": db.query(Rule).count(),
-            "aliases_count": db.query(Alias).count(),
-            "e_numbers_count": db.query(ENumber).count(),
-            "allergens_count": db.query(Allergen).count(),
-            "profiles_count": db.query(Profile).count(),
-            "history_count": db.query(History).count(),
-        }
-
-    finally:
-        db.close()
+    ("hydrolysed gelatin", "gelatin"),
+    ("beef extract", "beef"),
+    ("chicken fat", "chicken"),
+    ("chicken powder", "
