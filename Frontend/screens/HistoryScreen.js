@@ -1,15 +1,58 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, SafeAreaView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchHistory, fetchHistoryDetail, displayProfile } from '../services/api';
 
-function statusColor(status) {
-  if (status === 'Safe' || status === 'Allowed') return '#4CAF50';
-  if (status === 'Restricted') return '#EF5350';
-  return '#FF9800';
+function getStatusConfig(status) {
+  if (status === 'Safe' || status === 'Allowed') {
+    return {
+      label: 'Safe',
+      color: '#4CAF50',
+      bg: '#E8F5E9',
+      icon: 'checkmark-circle',
+      textIcon: '✅',
+    };
+  }
+
+  if (status === 'Restricted') {
+    return {
+      label: 'Restricted',
+      color: '#EF5350',
+      bg: '#FFEBEE',
+      icon: 'close-circle',
+      textIcon: '❌',
+    };
+  }
+
+  return {
+    label: 'Uncertain',
+    color: '#FF9800',
+    bg: '#FFF3E0',
+    icon: 'help-circle',
+    textIcon: '⚠️',
+  };
+}
+
+function formatTimestamp(timestamp) {
+  if (!timestamp) return 'No timestamp';
+
+  try {
+    return new Date(timestamp).toLocaleString();
+  } catch {
+    return timestamp;
+  }
 }
 
 export default function HistoryScreen({ navigation }) {
@@ -19,8 +62,26 @@ export default function HistoryScreen({ navigation }) {
   const loadHistory = async () => {
     try {
       setLoading(true);
+
       const serverHistory = await fetchHistory();
-      setHistory(serverHistory);
+
+      const local = await AsyncStorage.getItem('HISTORY');
+      const localHistory = local ? JSON.parse(local) : [];
+
+      const combined = [...serverHistory, ...localHistory];
+
+      const unique = [];
+      const seen = new Set();
+
+      combined.forEach((item) => {
+        const key = `${item.id}-${item.product_name || item.name}-${item.timestamp || item.date}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(item);
+        }
+      });
+
+      setHistory(unique);
     } catch {
       try {
         const local = await AsyncStorage.getItem('HISTORY');
@@ -45,18 +106,21 @@ export default function HistoryScreen({ navigation }) {
         navigation.navigate('Results', {
           apiResult: item.analysis_json,
           selectedProfiles: item.profile_used || item.profile || [],
-          productName: item.product_name || item.name,
+          productName: item.product_name || item.name || 'Saved Analysis',
           ingredientText: item.ingredients || '',
+          fromHistory: true,
         });
         return;
       }
 
       const detail = await fetchHistoryDetail(item.id);
+
       navigation.navigate('Results', {
         apiResult: detail.analysis_json,
         selectedProfiles: detail.profile_used || [],
-        productName: detail.product_name,
+        productName: detail.product_name || 'Saved Analysis',
         ingredientText: detail.ingredients || '',
+        fromHistory: true,
       });
     } catch (error) {
       Alert.alert('Could not open history', error.message || 'Please try again.');
@@ -71,8 +135,12 @@ export default function HistoryScreen({ navigation }) {
             <Pressable onPress={() => navigation.goBack()}>
               <Ionicons name="arrow-back" size={26} color="#2E7D32" />
             </Pressable>
+
             <Text style={styles.title}>Analysis History</Text>
-            <View style={{ width: 26 }} />
+
+            <Pressable onPress={loadHistory}>
+              <Ionicons name="refresh" size={24} color="#2E7D32" />
+            </Pressable>
           </View>
 
           {loading ? (
@@ -84,36 +152,60 @@ export default function HistoryScreen({ navigation }) {
             <View style={styles.emptyCard}>
               <Ionicons name="time-outline" size={70} color="#9E9E9E" />
               <Text style={styles.emptyTitle}>No History Yet</Text>
-              <Text style={styles.emptyText}>Analysed products will appear here after you save results.</Text>
+              <Text style={styles.emptyText}>
+                Analysed products will appear here automatically after results are generated.
+              </Text>
+
               <Pressable style={styles.primaryButton} onPress={() => navigation.navigate('Home')}>
                 <Text style={styles.primaryText}>Go Home</Text>
               </Pressable>
             </View>
           ) : (
-            history.map((item) => {
+            history.map((item, index) => {
               const result = item.result || item.status || 'Uncertain';
-              const color = statusColor(result);
+              const statusConfig = getStatusConfig(result);
               const profiles = item.profile_used || item.profile || [];
 
               return (
-                <Pressable key={item.id} style={styles.historyCard} onPress={() => openHistoryItem(item)}>
+                <Pressable
+                  key={`${item.id || index}-${item.timestamp || index}`}
+                  style={styles.historyCard}
+                  onPress={() => openHistoryItem(item)}
+                >
                   <View style={styles.historyTopRow}>
-                    <View style={[styles.statusDot, { backgroundColor: color }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.productName}>{item.product_name || item.name || 'Product Analysis'}</Text>
-                      <Text style={[styles.resultText, { color }]}>{result}</Text>
+                    <View style={[styles.statusIcon, { backgroundColor: statusConfig.bg }]}>
+                      <Ionicons
+                        name={statusConfig.icon}
+                        size={24}
+                        color={statusConfig.color}
+                      />
                     </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.productName}>
+                        {item.product_name || item.name || 'Product Analysis'}
+                      </Text>
+
+                      <Text style={[styles.resultText, { color: statusConfig.color }]}>
+                        {statusConfig.textIcon} {statusConfig.label}
+                      </Text>
+                    </View>
+
                     <Ionicons name="chevron-forward" size={24} color="#999" />
                   </View>
 
-                  <Text style={styles.dateText}>{item.timestamp || item.date || 'No timestamp'}</Text>
+                  <Text style={styles.dateText}>{formatTimestamp(item.timestamp || item.date)}</Text>
 
                   <View style={styles.tagsWrap}>
-                    {profiles.map((profile) => (
-                      <View key={profile} style={styles.profileTag}>
-                        <Text style={styles.profileTagText}>{displayProfile(profile)}</Text>
-                      </View>
-                    ))}
+                    {profiles.length > 0 ? (
+                      profiles.map((profile) => (
+                        <View key={profile} style={styles.profileTag}>
+                          <Text style={styles.profileTagText}>{displayProfile(profile)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noProfileText}>No profile recorded</Text>
+                    )}
                   </View>
                 </Pressable>
               );
@@ -128,22 +220,110 @@ export default function HistoryScreen({ navigation }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
-  title: { fontSize: 26, fontWeight: '900', color: '#1B5E20' },
-  centerBox: { padding: 40, alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#555' },
-  emptyCard: { backgroundColor: '#fff', borderRadius: 26, padding: 30, alignItems: 'center', elevation: 3 },
-  emptyTitle: { fontSize: 24, fontWeight: '900', color: '#333', marginTop: 14 },
-  emptyText: { color: '#666', textAlign: 'center', lineHeight: 22, marginTop: 8 },
-  primaryButton: { marginTop: 22, backgroundColor: '#4CAF50', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16 },
-  primaryText: { color: '#fff', fontWeight: '900' },
-  historyCard: { backgroundColor: '#fff', borderRadius: 22, padding: 18, marginBottom: 14, elevation: 2 },
-  historyTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statusDot: { width: 14, height: 14, borderRadius: 7 },
-  productName: { fontSize: 17, fontWeight: '900', color: '#222' },
-  resultText: { fontSize: 14, fontWeight: '900', marginTop: 3 },
-  dateText: { color: '#777', fontSize: 13, marginTop: 12 },
-  tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  profileTag: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  profileTagText: { color: '#2E7D32', fontWeight: '800', fontSize: 12 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#1B5E20',
+  },
+  centerBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#555',
+  },
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 26,
+    padding: 30,
+    alignItems: 'center',
+    elevation: 3,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#333',
+    marginTop: 14,
+  },
+  emptyText: {
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  primaryButton: {
+    marginTop: 22,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  primaryText: {
+    color: '#fff',
+    fontWeight: '900',
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 14,
+    elevation: 2,
+  },
+  historyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statusIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productName: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#222',
+  },
+  resultText: {
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  dateText: {
+    color: '#777',
+    fontSize: 13,
+    marginTop: 12,
+  },
+  tagsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  profileTag: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  profileTagText: {
+    color: '#2E7D32',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  noProfileText: {
+    color: '#777',
+    fontSize: 13,
+  },
 });
