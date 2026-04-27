@@ -95,10 +95,13 @@ class History(Base):
 
 
 SEED_RULES = [
+    ("sugar", "vegan", "Allowed", "Sugar has no direct vegan restriction in the current rules."),
+    ("vegetable oil", "vegan", "Allowed", "Vegetable oil is plant-derived."),
+    ("cocoa powder", "vegan", "Allowed", "Cocoa powder has no direct vegan restriction in the current rules."),
+    ("flavouring", "vegan", "Uncertain", "Flavouring may require source verification."),
+
     ("milk", "vegan", "Restricted", "Milk is animal-derived and not suitable for vegan diets."),
     ("milk", "dairy-free", "Restricted", "Milk conflicts with dairy-free diets."),
-    ("milk powder", "vegan", "Restricted", "Milk powder is dairy-derived and not suitable for vegan diets."),
-    ("milk powder", "dairy-free", "Restricted", "Milk powder conflicts with dairy-free diets."),
     ("whey", "vegan", "Restricted", "Whey is dairy-derived and not suitable for vegan diets."),
     ("whey", "dairy-free", "Restricted", "Whey conflicts with dairy-free diets."),
     ("casein", "vegan", "Restricted", "Casein is dairy-derived and not suitable for vegan diets."),
@@ -124,19 +127,28 @@ SEED_RULES = [
     ("potato", "Jain", "Restricted", "Potato is a root vegetable and conflicts with Jain dietary restrictions."),
 
     ("wheat", "gluten-free", "Restricted", "Wheat contains gluten and conflicts with gluten-free diets."),
-    ("wheat flour", "gluten-free", "Restricted", "Wheat flour contains gluten and conflicts with gluten-free diets."),
     ("barley", "gluten-free", "Restricted", "Barley contains gluten and conflicts with gluten-free diets."),
+    ("rye", "gluten-free", "Restricted", "Rye contains gluten and conflicts with gluten-free diets."),
 
     ("peanut", "nut-free", "Restricted", "Peanut conflicts with nut-free diets."),
+    ("hazelnut", "nut-free", "Restricted", "Hazelnut conflicts with nut-free diets."),
     ("almond", "nut-free", "Restricted", "Almond conflicts with nut-free diets."),
     ("cashew", "nut-free", "Restricted", "Cashew conflicts with nut-free diets."),
-    ("hazelnut", "nut-free", "Restricted", "Hazelnut conflicts with nut-free diets."),
     ("walnut", "nut-free", "Restricted", "Walnut conflicts with nut-free diets."),
+    ("pistachio", "nut-free", "Restricted", "Pistachio conflicts with nut-free diets."),
+    ("pecan", "nut-free", "Restricted", "Pecan conflicts with nut-free diets."),
+    ("macadamia", "nut-free", "Restricted", "Macadamia conflicts with nut-free diets."),
+
+    ("soy", "vegan", "Allowed", "Soy is plant-derived."),
+    ("soy", "nut-free", "Allowed", "Soy is not a tree nut, but users with soy allergy should verify separately."),
 
     ("e120", "vegan", "Restricted", "E120 is cochineal/carmine and is insect-derived."),
     ("e120", "vegetarian", "Restricted", "E120 is insect-derived."),
     ("e120", "Jain", "Restricted", "E120 is insect-derived and conflicts with Jain dietary restrictions."),
     ("e120", "halal", "Uncertain", "E120 source and certification may require halal verification."),
+
+    ("e322", "vegan", "Uncertain", "E322/lecithin may be plant or animal derived depending on source."),
+    ("e322", "halal", "Uncertain", "E322 source may require halal verification."),
 
     ("e441", "vegan", "Restricted", "E441 is gelatin and is animal-derived."),
     ("e441", "vegetarian", "Restricted", "E441 is gelatin and is not suitable for vegetarian diets."),
@@ -145,22 +157,60 @@ SEED_RULES = [
 
     ("e471", "vegan", "Uncertain", "E471 may be derived from plant or animal sources."),
     ("e471", "halal", "Uncertain", "E471 origin may require halal verification."),
-    ("e322", "vegan", "Uncertain", "E322 source may vary depending on formulation."),
-    ("e322", "halal", "Uncertain", "E322 source may require halal verification."),
 ]
 
 
 SEED_ALIASES = [
     ("sucrose", "sugar"),
     ("cane sugar", "sugar"),
-    ("sea salt", "salt"),
-    ("milk solids", "milk"),
+    ("white sugar", "sugar"),
+    ("raw sugar", "sugar"),
+
+    ("vegetable oils", "vegetable oil"),
+    ("palm oil", "vegetable oil"),
+    ("sunflower oil", "vegetable oil"),
+    ("canola oil", "vegetable oil"),
+
+    ("skim milk powder", "milk"),
+    ("skimmed milk powder", "milk"),
     ("milk powder", "milk"),
-    ("lecithin", "e322"),
+    ("whole milk powder", "milk"),
+    ("fat reduced milk powder", "milk"),
+    ("fat-reduced milk powder", "milk"),
+    ("milk solids", "milk"),
+    ("total milk solids", "milk"),
+    ("dairy solids", "milk"),
+    ("cream", "milk"),
+    ("butter", "milk"),
+
+    ("hazelnuts", "hazelnut"),
+    ("hazelnut pieces", "hazelnut"),
+    ("almonds", "almond"),
+    ("cashews", "cashew"),
+    ("walnuts", "walnut"),
+    ("peanuts", "peanut"),
+    ("pistachios", "pistachio"),
+    ("pecans", "pecan"),
+
     ("soy lecithin", "e322"),
+    ("soya lecithin", "e322"),
+    ("lecithin", "e322"),
+    ("emulsifier soy lecithin", "e322"),
+    ("emulsifier soya lecithin", "e322"),
+    ("emulsifier lecithin", "e322"),
+
     ("mono- and diglycerides of fatty acids", "e471"),
     ("mono and diglycerides of fatty acids", "e471"),
+    ("mono-diglycerides of fatty acids", "e471"),
+
     ("gelatine", "gelatin"),
+    ("fat reduced cocoa powder", "cocoa powder"),
+    ("fat-reduced cocoa powder", "cocoa powder"),
+    ("cocoa", "cocoa powder"),
+    ("vanillin", "flavouring"),
+    ("flavoring", "flavouring"),
+    ("natural flavouring", "flavouring"),
+    ("artificial flavouring", "flavouring"),
 ]
 
 
@@ -169,13 +219,20 @@ SEED_ALLERGENS = [
     ("whey", "dairy-free"),
     ("casein", "dairy-free"),
     ("lactose", "dairy-free"),
+
     ("peanut", "nut-free"),
+    ("hazelnut", "nut-free"),
     ("almond", "nut-free"),
     ("cashew", "nut-free"),
-    ("hazelnut", "nut-free"),
     ("walnut", "nut-free"),
+    ("pistachio", "nut-free"),
+    ("pecan", "nut-free"),
+    ("macadamia", "nut-free"),
+
     ("wheat", "gluten-free"),
     ("barley", "gluten-free"),
+    ("rye", "gluten-free"),
+
     ("egg", "vegan"),
     ("eggs", "vegan"),
 ]
@@ -206,8 +263,12 @@ def seed_core_data():
                 status=status,
                 reason=reason,
             )
-            statement = statement.on_conflict_do_nothing(
-                constraint="uq_rule_ingredient_profile"
+            statement = statement.on_conflict_do_update(
+                constraint="uq_rule_ingredient_profile",
+                set_={
+                    "status": status,
+                    "reason": reason,
+                },
             )
             db.execute(statement)
 
@@ -216,8 +277,9 @@ def seed_core_data():
                 alias_name=alias_name.lower(),
                 actual_name=actual_name.lower(),
             )
-            statement = statement.on_conflict_do_nothing(
-                index_elements=["alias_name"]
+            statement = statement.on_conflict_do_update(
+                index_elements=["alias_name"],
+                set_={"actual_name": actual_name.lower()},
             )
             db.execute(statement)
 
@@ -271,8 +333,14 @@ def seed_e_numbers_from_csv():
                     e_type=e_type,
                     halal_status=halal_status,
                 )
-                e_number_statement = e_number_statement.on_conflict_do_nothing(
-                    index_elements=["e_number"]
+                e_number_statement = e_number_statement.on_conflict_do_update(
+                    index_elements=["e_number"],
+                    set_={
+                        "name": name,
+                        "notes": notes,
+                        "e_type": e_type,
+                        "halal_status": halal_status,
+                    },
                 )
                 db.execute(e_number_statement)
 
