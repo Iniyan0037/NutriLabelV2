@@ -1,5 +1,4 @@
 import csv
-import json
 import os
 from pathlib import Path
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ from sqlalchemy import (
     DateTime,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -182,6 +181,14 @@ SEED_ALLERGENS = [
 ]
 
 
+def clean_value(value):
+    return str(value or "").strip()
+
+
+def clean_lower(value):
+    return clean_value(value).lower()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     seed_core_data()
@@ -190,49 +197,46 @@ def init_db():
 
 def seed_core_data():
     db = SessionLocal()
+
     try:
         for ingredient_name, profile, status, reason in SEED_RULES:
-            exists = (
-                db.query(Rule)
-                .filter(
-                    Rule.ingredient_name == ingredient_name.lower(),
-                    Rule.profile == profile,
-                )
-                .first()
+            statement = insert(Rule).values(
+                ingredient_name=ingredient_name.lower(),
+                profile=profile,
+                status=status,
+                reason=reason,
             )
-            if not exists:
-                db.add(
-                    Rule(
-                        ingredient_name=ingredient_name.lower(),
-                        profile=profile,
-                        status=status,
-                        reason=reason,
-                    )
-                )
+            statement = statement.on_conflict_do_nothing(
+                constraint="uq_rule_ingredient_profile"
+            )
+            db.execute(statement)
 
         for alias_name, actual_name in SEED_ALIASES:
-            exists = db.query(Alias).filter(Alias.alias_name == alias_name.lower()).first()
-            if not exists:
-                db.add(Alias(alias_name=alias_name.lower(), actual_name=actual_name.lower()))
+            statement = insert(Alias).values(
+                alias_name=alias_name.lower(),
+                actual_name=actual_name.lower(),
+            )
+            statement = statement.on_conflict_do_nothing(
+                index_elements=["alias_name"]
+            )
+            db.execute(statement)
 
         for ingredient_name, allergen_type in SEED_ALLERGENS:
-            exists = (
-                db.query(Allergen)
-                .filter(
-                    Allergen.ingredient_name == ingredient_name.lower(),
-                    Allergen.allergen_type == allergen_type,
-                )
-                .first()
+            statement = insert(Allergen).values(
+                ingredient_name=ingredient_name.lower(),
+                allergen_type=allergen_type,
             )
-            if not exists:
-                db.add(
-                    Allergen(
-                        ingredient_name=ingredient_name.lower(),
-                        allergen_type=allergen_type,
-                    )
-                )
+            statement = statement.on_conflict_do_nothing(
+                constraint="uq_allergen_ingredient_type"
+            )
+            db.execute(statement)
 
         db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
     finally:
         db.close()
 
@@ -244,45 +248,59 @@ def seed_e_numbers_from_csv():
         return
 
     db = SessionLocal()
+
     try:
         with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
             reader = csv.DictReader(file)
 
             for row in reader:
-                e_number = (row.get("e_code") or "").strip().lower()
-                name = (row.get("title") or "").strip()
-                notes = (row.get("info") or "").strip()
-                e_type = (row.get("e_type") or "").strip()
-                halal_status = (row.get("halal_status") or "").strip()
+                e_number = clean_lower(row.get("e_code"))
+                name = clean_value(row.get("title"))
+                notes = clean_value(row.get("info"))
+                e_type = clean_value(row.get("e_type"))
+                halal_status = clean_value(row.get("halal_status"))
 
                 if not e_number or not name:
                     continue
 
-                exists = db.query(ENumber).filter(ENumber.e_number == e_number).first()
+                e_number_statement = insert(ENumber).values(
+                    e_number=e_number,
+                    name=name,
+                    origin=None,
+                    notes=notes,
+                    e_type=e_type,
+                    halal_status=halal_status,
+                )
+                e_number_statement = e_number_statement.on_conflict_do_nothing(
+                    index_elements=["e_number"]
+                )
+                db.execute(e_number_statement)
 
-                if not exists:
-                    db.add(
-                        ENumber(
-                            e_number=e_number,
-                            name=name,
-                            origin=None,
-                            notes=notes,
-                            e_type=e_type,
-                            halal_status=halal_status,
-                        )
+                alias_name = name.lower().strip()
+
+                if alias_name:
+                    alias_statement = insert(Alias).values(
+                        alias_name=alias_name,
+                        actual_name=e_number,
                     )
-
-                alias_exists = db.query(Alias).filter(Alias.alias_name == name.lower()).first()
-                if not alias_exists:
-                    db.add(Alias(alias_name=name.lower(), actual_name=e_number))
+                    alias_statement = alias_statement.on_conflict_do_nothing(
+                        index_elements=["alias_name"]
+                    )
+                    db.execute(alias_statement)
 
         db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
     finally:
         db.close()
 
 
 def db_status_counts():
     db = SessionLocal()
+
     try:
         return {
             "rules_count": db.query(Rule).count(),
@@ -292,5 +310,6 @@ def db_status_counts():
             "profiles_count": db.query(Profile).count(),
             "history_count": db.query(History).count(),
         }
+
     finally:
         db.close()
