@@ -21,19 +21,16 @@ STATUS_PRIORITY = {
 
 
 def normalize_profile(profile):
-    if profile == "jain":
+    if str(profile).strip().lower() == "jain":
         return "Jain"
-    return profile
+    return str(profile).strip()
 
 
 def normalize_profiles(selected_profiles):
     profiles = []
 
     for profile in selected_profiles or []:
-        if not isinstance(profile, str):
-            continue
-
-        normalized = normalize_profile(profile.strip())
+        normalized = normalize_profile(profile)
 
         if normalized in VALID_PROFILES and normalized not in profiles:
             profiles.append(normalized)
@@ -44,12 +41,21 @@ def normalize_profiles(selected_profiles):
 def clean_ingredient_text(text):
     text = text or ""
     text = text.lower()
-    text = re.sub(r"ingredients?:", "", text)
-    text = re.sub(r"may contain.*", "", text)
-    text = re.sub(r"\([^)]*\)", " ", text)
+
+    text = re.sub(r"\bingredients?\s*:", "", text)
+    text = re.sub(r"\bcontains\s*:", ", contains ", text)
+    text = re.sub(r"\btotal milk solids\s*:", ", total milk solids ", text)
+    text = re.sub(r"\btotal cocoa solids\s*:", ", total cocoa solids ", text)
+
     text = re.sub(r"\d+(\.\d+)?\s*%", " ", text)
+    text = re.sub(r"\([^)]*\)", " ", text)
+
+    text = text.replace(".", ",")
+    text = text.replace(";", ",")
+
     text = re.sub(r"[^a-z0-9,\- ]+", " ", text)
     text = re.sub(r"\s+", " ", text)
+
     return text.strip()
 
 
@@ -59,12 +65,29 @@ def split_ingredients(text):
     if not cleaned:
         return []
 
-    parts = re.split(r",|;", cleaned)
+    raw_parts = [part.strip() for part in cleaned.split(",")]
     ingredients = []
 
-    for part in parts:
+    junk_prefixes = [
+        "contains ",
+        "may contain ",
+        "total ",
+    ]
+
+    for part in raw_parts:
         item = part.strip()
-        if item and item not in ingredients:
+
+        for prefix in junk_prefixes:
+            if item.startswith(prefix):
+                item = item.replace(prefix, "", 1).strip()
+
+        if not item:
+            continue
+
+        if len(item) < 2:
+            continue
+
+        if item not in ingredients:
             ingredients.append(item)
 
     return ingredients
@@ -82,15 +105,80 @@ def stronger_status(current, new):
     return new if STATUS_PRIORITY.get(new, 0) > STATUS_PRIORITY.get(current, 0) else current
 
 
+def get_all_aliases_sorted(db):
+    aliases = db.query(Alias).all()
+
+    return sorted(
+        aliases,
+        key=lambda alias: len(alias.alias_name or ""),
+        reverse=True,
+    )
+
+
 def resolve_alias(db, ingredient):
     normalized = ingredient.lower().strip()
 
-    alias = db.query(Alias).filter(Alias.alias_name == normalized).first()
+    exact_alias = db.query(Alias).filter(Alias.alias_name == normalized).first()
 
-    if alias:
-        return alias.actual_name.lower().strip()
+    if exact_alias:
+        return exact_alias.actual_name.lower().strip(), "alias_exact"
 
-    return normalized
+    exact_rule = db.query(Rule).filter(Rule.ingredient_name == normalized).first()
+
+    if exact_rule:
+        return normalized, "rule_exact"
+
+    aliases = get_all_aliases_sorted(db)
+
+    for alias in aliases:
+        alias_name = (alias.alias_name or "").lower().strip()
+
+        if not alias_name:
+            continue
+
+        if len(alias_name) < 3:
+            continue
+
+        pattern = r"(^|[^a-z0-9])" + re.escape(alias_name) + r"([^a-z0-9]|$)"
+
+        if re.search(pattern, normalized):
+            return alias.actual_name.lower().strip(), "alias_partial"
+
+    all_rules = db.query(Rule).all()
+    all_rules = sorted(
+        all_rules,
+        key=lambda rule: len(rule.ingredient_name or ""),
+        reverse=True,
+    )
+
+    for rule in all_rules:
+        rule_name = (rule.ingredient_name or "").lower().strip()
+
+        if not rule_name:
+            continue
+
+        if len(rule_name) < 3:
+            continue
+
+        pattern = r"(^|[^a-z0-9])" + re.escape(rule_name) + r"([^a-z0-9]|$)"
+
+        if re.search(pattern, normalized):
+            return rule_name, "rule_partial"
+
+    singular = normalized[:-1] if normalized.endswith("s") else normalized
+
+    if singular != normalized:
+        alias = db.query(Alias).filter(Alias.alias_name == singular).first()
+
+        if alias:
+            return alias.actual_name.lower().strip(), "alias_singular"
+
+        rule = db.query(Rule).filter(Rule.ingredient_name == singular).first()
+
+        if rule:
+            return singular, "rule_singular"
+
+    return normalized, "none"
 
 
 def get_rules_for_name(db, name, selected_profiles):
@@ -120,12 +208,11 @@ def get_allergen_matches(db, name, selected_profiles):
 
 
 def evaluate_single_ingredient(db, original_ingredient, selected_profiles):
-    canonical_name = resolve_alias(db, original_ingredient)
+    canonical_name, match_type = resolve_alias(db, original_ingredient)
 
     final_status = "Allowed"
     reasons = []
     matched_profiles = []
-    match_type = "direct"
 
     rules = get_rules_for_name(db, canonical_name, selected_profiles)
 
@@ -142,15 +229,18 @@ def evaluate_single_ingredient(db, original_ingredient, selected_profiles):
             f"{canonical_name} conflicts with the selected {allergen.allergen_type} profile."
         )
         matched_profiles.append(allergen.allergen_type)
-        match_type = "allergen"
+
+        if match_type == "none":
+            match_type = "allergen"
 
     e_number_info = get_e_number_info(db, canonical_name)
 
     if e_number_info:
-        match_type = "e_number"
+        if match_type == "none":
+            match_type = "e_number"
 
         if not rules:
-            if e_number_info.halal_status and "halal" in selected_profiles:
+            if "halal" in selected_profiles and e_number_info.halal_status:
                 halal_status = e_number_info.halal_status.lower()
 
                 if "haram" in halal_status or "not halal" in halal_status:
@@ -159,7 +249,13 @@ def evaluate_single_ingredient(db, original_ingredient, selected_profiles):
                         f"{canonical_name.upper()} ({e_number_info.name}) is marked as not halal in the additives dataset."
                     )
                     matched_profiles.append("halal")
-                elif "mushbooh" in halal_status or "doubt" in halal_status or "unknown" in halal_status:
+
+                elif (
+                    "mushbooh" in halal_status
+                    or "doubt" in halal_status
+                    or "unknown" in halal_status
+                    or "questionable" in halal_status
+                ):
                     final_status = stronger_status(final_status, "Uncertain")
                     reasons.append(
                         f"{canonical_name.upper()} ({e_number_info.name}) may require halal verification."
@@ -176,6 +272,9 @@ def evaluate_single_ingredient(db, original_ingredient, selected_profiles):
         reasons.append(
             "No matching rule was found in the database, so this ingredient is marked as uncertain."
         )
+
+    if rules and not reasons:
+        reasons.append("A matching dietary rule was found in the database.")
 
     return {
         "ingredient": original_ingredient,
@@ -233,6 +332,8 @@ def analyze_ingredients(
             "status": "Uncertain",
             "selected_profiles": [],
             "ingredients_analysis": [],
+            "additives_analysis": [],
+            "allergens_analysis": [],
             "summary": "No dietary profile was selected.",
         }
 
@@ -276,6 +377,7 @@ def analyze_ingredients(
             "allergens_analysis": allergen_results,
             "summary": build_summary(overall_status, profiles),
         }
+
     finally:
         db.close()
 
@@ -285,6 +387,7 @@ def build_summary(status, selected_profiles):
 
     if status == "Restricted":
         return f"This product is not suitable for the selected profile(s): {profile_text}."
+
     if status == "Uncertain":
         return f"This product needs further checking for the selected profile(s): {profile_text}."
 
