@@ -8,17 +8,20 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+
 import {
   deleteProfile,
   displayProfile,
   fetchProfiles,
   normalizeProfiles,
 } from '../services/api';
+
 import {
   getHighContrastPreference,
   goBackSafely,
@@ -42,7 +45,7 @@ export default function ProfileScreen({ navigation }) {
       setProfiles(serverProfiles);
     } catch (error) {
       setProfiles([]);
-      Alert.alert('Could not load profiles', error.message || 'Please try again.');
+      showMessage('Could not load profiles', error.message || 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -54,47 +57,79 @@ export default function ProfileScreen({ navigation }) {
     }, [])
   );
 
-  const activateProfile = async (profile) => {
-    const restrictions = normalizeProfiles(profile.restrictions || []);
-
-    await AsyncStorage.setItem('PROFILE', JSON.stringify(restrictions));
-    await AsyncStorage.setItem('ACTIVE_PROFILE', JSON.stringify(profile));
-
-    navigation.navigate('Home', {
-      profile: restrictions,
-      activeProfile: profile,
-    });
+  const showMessage = (title, message) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
   };
 
-  const handleDeleteProfile = (profile) => {
+  const activateProfile = async (profile) => {
+    try {
+      const restrictions = normalizeProfiles(profile.restrictions || []);
+
+      await AsyncStorage.setItem('PROFILE', JSON.stringify(restrictions));
+      await AsyncStorage.setItem('ACTIVE_PROFILE', JSON.stringify(profile));
+
+      navigation.navigate('Home', {
+        profile: restrictions,
+        activeProfile: profile,
+      });
+    } catch (error) {
+      showMessage('Could not use profile', error.message || 'Please try again.');
+    }
+  };
+
+  const performDeleteProfile = async (profile) => {
+    try {
+      setDeletingId(profile.id);
+
+      await deleteProfile(profile.id);
+
+      const activeProfileRaw = await AsyncStorage.getItem('ACTIVE_PROFILE');
+      const activeProfile = activeProfileRaw ? JSON.parse(activeProfileRaw) : null;
+
+      if (activeProfile?.id === profile.id) {
+        await AsyncStorage.removeItem('ACTIVE_PROFILE');
+        await AsyncStorage.removeItem('PROFILE');
+      }
+
+      setProfiles((current) => current.filter((item) => item.id !== profile.id));
+
+      showMessage('Deleted', 'Profile deleted successfully.');
+    } catch (error) {
+      showMessage('Delete failed', error.message || 'Could not delete profile.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteProfile = async (profile) => {
+    const profileName = profile.profile_name || 'this profile';
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${profileName}"?`
+      );
+
+      if (confirmed) {
+        await performDeleteProfile(profile);
+      }
+
+      return;
+    }
+
     Alert.alert(
       'Delete Profile',
-      `Are you sure you want to delete "${profile.profile_name || 'this profile'}"?`,
+      `Are you sure you want to delete "${profileName}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            try {
-              setDeletingId(profile.id);
-
-              await deleteProfile(profile.id);
-
-              const activeProfileRaw = await AsyncStorage.getItem('ACTIVE_PROFILE');
-              const activeProfile = activeProfileRaw ? JSON.parse(activeProfileRaw) : null;
-
-              if (activeProfile?.id === profile.id) {
-                await AsyncStorage.removeItem('ACTIVE_PROFILE');
-                await AsyncStorage.removeItem('PROFILE');
-              }
-
-              setProfiles((current) => current.filter((item) => item.id !== profile.id));
-            } catch (error) {
-              Alert.alert('Delete failed', error.message || 'Could not delete profile.');
-            } finally {
-              setDeletingId(null);
-            }
+            await performDeleteProfile(profile);
           },
         },
       ]
@@ -198,24 +233,33 @@ export default function ProfileScreen({ navigation }) {
                   </View>
 
                   <View style={styles.tagsWrap}>
-                    {restrictions.map((item) => (
-                      <View
-                        key={item}
-                        style={[
-                          styles.tag,
-                          { backgroundColor: colors.card2, borderColor: colors.primary },
-                        ]}
-                      >
-                        <Text style={[styles.tagText, { color: colors.text }]}>
-                          {displayProfile(item)}
-                        </Text>
-                      </View>
-                    ))}
+                    {restrictions.length > 0 ? (
+                      restrictions.map((item) => (
+                        <View
+                          key={item}
+                          style={[
+                            styles.tag,
+                            { backgroundColor: colors.card2, borderColor: colors.primary },
+                          ]}
+                        >
+                          <Text style={[styles.tagText, { color: colors.text }]}>
+                            {displayProfile(item)}
+                          </Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={[styles.noRestrictionText, { color: colors.muted }]}>
+                        No restrictions recorded
+                      </Text>
+                    )}
                   </View>
 
                   <View style={styles.actionRow}>
                     <Pressable
-                      style={[styles.smallButton, { backgroundColor: colors.primary }]}
+                      style={[
+                        styles.smallButton,
+                        { backgroundColor: isDeleting ? colors.muted : colors.primary },
+                      ]}
                       onPress={() => activateProfile(profile)}
                       accessibilityRole="button"
                       accessibilityLabel={`Use profile ${profile.profile_name}`}
@@ -227,7 +271,10 @@ export default function ProfileScreen({ navigation }) {
                     </Pressable>
 
                     <Pressable
-                      style={[styles.smallButtonOutline, { borderColor: colors.primary }]}
+                      style={[
+                        styles.smallButtonOutline,
+                        { borderColor: colors.primary, opacity: isDeleting ? 0.5 : 1 },
+                      ]}
                       onPress={() => navigation.navigate('EditProfile', { profile })}
                       accessibilityRole="button"
                       accessibilityLabel={`Edit profile ${profile.profile_name}`}
@@ -245,6 +292,7 @@ export default function ProfileScreen({ navigation }) {
                       {
                         borderColor: highContrast ? colors.border : '#EF5350',
                         backgroundColor: highContrast ? colors.card2 : '#FFEBEE',
+                        opacity: isDeleting ? 0.7 : 1,
                       },
                     ]}
                     onPress={() => handleDeleteProfile(profile)}
@@ -272,15 +320,23 @@ export default function ProfileScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { padding: 20, paddingBottom: 40 },
+  flex: {
+    flex: 1,
+  },
+  container: {
+    padding: 20,
+    paddingBottom: 40,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  headerTitle: { fontSize: 22, fontWeight: '900' },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
   title: {
     fontSize: 30,
     fontWeight: '900',
@@ -302,17 +358,34 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: 18,
   },
-  primaryText: { fontSize: 17, fontWeight: '900' },
-  centerBox: { padding: 40, alignItems: 'center' },
-  loadingText: { marginTop: 10, fontWeight: '700' },
+  primaryText: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  centerBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontWeight: '700',
+  },
   emptyCard: {
     borderWidth: 1,
     borderRadius: 22,
     padding: 26,
     alignItems: 'center',
   },
-  emptyTitle: { fontSize: 22, fontWeight: '900', marginTop: 12 },
-  emptyText: { textAlign: 'center', lineHeight: 22, marginTop: 8 },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginTop: 12,
+  },
+  emptyText: {
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: 8,
+  },
   profileCard: {
     borderWidth: 1,
     borderRadius: 22,
@@ -325,8 +398,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  profileTitle: { fontSize: 20, fontWeight: '900' },
-  profileSub: { marginTop: 3, fontWeight: '700' },
+  profileTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  profileSub: {
+    marginTop: 3,
+    fontWeight: '700',
+  },
   tagsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -339,7 +418,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  tagText: { fontWeight: '800', fontSize: 12 },
+  tagText: {
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  noRestrictionText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
@@ -351,7 +437,9 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
   },
-  smallButtonText: { fontWeight: '900' },
+  smallButtonText: {
+    fontWeight: '900',
+  },
   smallButtonOutline: {
     flex: 1,
     borderRadius: 14,
@@ -359,7 +447,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
   },
-  smallButtonOutlineText: { fontWeight: '900' },
+  smallButtonOutlineText: {
+    fontWeight: '900',
+  },
   deleteButton: {
     marginTop: 12,
     borderWidth: 2,
