@@ -697,7 +697,26 @@ def update_profile(profile_id):
 
     finally:
         db.close()
+@app.route("/profile/delete/<int:profile_id>", methods=["DELETE"])
+def delete_profile(profile_id):
+    db = SessionLocal()
 
+    try:
+        profile = db.query(Profile).filter(Profile.id == profile_id).first()
+
+        if not profile:
+            return jsonify({"error": "Profile not found"}), 404
+
+        db.delete(profile)
+        db.commit()
+
+        return jsonify({
+            "message": "Profile deleted successfully",
+            "deleted_id": profile_id,
+        })
+
+    finally:
+        db.close()
 
 # -----------------------------
 # Iteration 2: history
@@ -799,7 +818,26 @@ def get_history_detail(history_id):
 
     finally:
         db.close()
+@app.route("/history/delete/<int:history_id>", methods=["DELETE"])
+def delete_history_item(history_id):
+    db = SessionLocal()
 
+    try:
+        item = db.query(History).filter(History.id == history_id).first()
+
+        if not item:
+            return jsonify({"error": "History item not found"}), 404
+
+        db.delete(item)
+        db.commit()
+
+        return jsonify({
+            "message": "History item deleted successfully",
+            "deleted_id": history_id,
+        })
+
+    finally:
+        db.close()
 
 # -----------------------------
 # Iteration 2: recommendations
