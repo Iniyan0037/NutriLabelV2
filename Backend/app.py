@@ -13,10 +13,6 @@ from db import init_db, db_status_counts, SessionLocal, Profile, History
 
 app = Flask(__name__)
 
-# -----------------------------
-# Configuration
-# -----------------------------
-
 allowed_origins = (
     os.getenv("ALLOWED_ORIGINS")
     or os.getenv("FRONTEND_ORIGINS")
@@ -30,27 +26,20 @@ else:
     CORS(app, resources={r"/*": {"origins": origins}})
 
 MAX_CACHE_ITEMS = 100
-MAX_IMAGE_BYTES = 1_500_000  # 1.5MB safety limit for OCR uploads
+MAX_IMAGE_BYTES = 1_500_000
 OPENFOOD_API_BASE = os.getenv("OPENFOOD_API_URL", "https://world.openfoodfacts.org")
 OCR_SPACE_API_KEY = os.getenv("OCR_SPACE_API_KEY") or os.getenv("OCR_API_KEY")
 
 product_cache = OrderedDict()
 last_openfood_request_time = 0.0
 
-# Create / upgrade DB tables and seed data
 init_db()
 
 
-# -----------------------------
-# Small helper functions
-# -----------------------------
-
 def cache_get(key):
     value = product_cache.get(key)
-
     if value is not None:
         product_cache.move_to_end(key)
-
     return value
 
 
@@ -62,17 +51,12 @@ def cache_set(key, value):
         product_cache.popitem(last=False)
 
 
-def normalise_barcode(value):
-    return str(value or "").strip()
-
-
 def clean_ocr_text(text):
     text = text or ""
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text).strip()
 
     lower_text = text.lower()
-
     if "ingredients" in lower_text:
         text = text[lower_text.find("ingredients"):]
 
@@ -90,36 +74,24 @@ def clean_ocr_text(text):
     for pattern in skip_patterns:
         text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
 
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def get_json_body():
     return request.get_json(silent=True) or {}
 
 
+def build_summary(status):
+    if status == "Restricted":
+        return "This product is not suitable for your selected dietary restrictions."
+    if status == "Uncertain":
+        return "This product may need further checking for your selected dietary restrictions."
+    if status == "Safe":
+        return "No direct conflicts were found for your selected dietary profiles."
+    return "No analysis summary available."
+
+
 def build_frontend_compatible_analysis(analysis):
-    """
-    Your current frontend ResultScreen expects:
-    {
-      overall_result: "Safe/Restricted/Uncertain",
-      summary: "...",
-      ingredients: [
-        { name, status, reason }
-      ]
-    }
-
-    The new analyzer may return newer keys like:
-    {
-      status,
-      ingredients_analysis,
-      additives_analysis,
-      allergens_analysis
-    }
-
-    This wrapper keeps the backend compatible with the current frontend while also
-    preserving the newer response fields.
-    """
     if not isinstance(analysis, dict):
         return {
             "overall_result": "Uncertain",
@@ -131,13 +103,8 @@ def build_frontend_compatible_analysis(analysis):
             "allergens_analysis": [],
         }
 
-    overall = (
-        analysis.get("overall_result")
-        or analysis.get("status")
-        or "Uncertain"
-    )
+    overall = analysis.get("overall_result") or analysis.get("status") or "Uncertain"
 
-    # frontend uses "Safe", not "Allowed", for the final product status
     if overall == "Allowed":
         overall = "Safe"
 
@@ -164,15 +131,12 @@ def build_frontend_compatible_analysis(analysis):
             or "Unknown"
         )
 
-        status = item.get("status") or "Uncertain"
-        reason = item.get("reason") or "No explanation available."
-
         frontend_items.append({
             "name": name,
             "ingredient": item.get("ingredient", name),
             "matched_name": item.get("matched_name", name),
-            "status": status,
-            "reason": reason,
+            "status": item.get("status") or "Uncertain",
+            "reason": item.get("reason") or "No explanation available.",
             "matched_profiles": item.get("matched_profiles", []),
             "match_type": item.get("match_type"),
             "source": item.get("source"),
@@ -190,16 +154,6 @@ def build_frontend_compatible_analysis(analysis):
     return compatible
 
 
-def build_summary(status):
-    if status == "Restricted":
-        return "This product is not suitable for your selected dietary restrictions."
-    if status == "Uncertain":
-        return "This product may need further checking for your selected dietary restrictions."
-    if status == "Safe":
-        return "No direct conflicts were found for your selected dietary profiles."
-    return "No analysis summary available."
-
-
 def run_analysis(ingredient_text, selected_profiles, additives_tags=None, allergens_tags=None):
     raw_result = analyze_ingredients(
         ingredient_text=ingredient_text,
@@ -210,10 +164,6 @@ def run_analysis(ingredient_text, selected_profiles, additives_tags=None, allerg
 
     return build_frontend_compatible_analysis(raw_result)
 
-
-# -----------------------------
-# Basic routes
-# -----------------------------
 
 @app.route("/", methods=["GET"])
 def home():
@@ -237,10 +187,6 @@ def db_status():
     })
 
 
-# -----------------------------
-# Core Iteration 1 + Iteration 2 analysis route
-# -----------------------------
-
 @app.route("/analyze", methods=["POST"])
 def analyze():
     data = get_json_body()
@@ -260,24 +206,17 @@ def analyze():
     result = run_analysis(
         ingredient_text=ingredient_text,
         selected_profiles=selected_profiles,
-        additives_tags=[],
-        allergens_tags=[],
     )
 
     return jsonify(result)
 
-
-# -----------------------------
-# Barcode / Open Food Facts
-# -----------------------------
 
 @app.route("/product/<barcode>", methods=["GET"])
 def get_product(barcode):
     global last_openfood_request_time
 
     selected_profiles = request.args.getlist("profile")
-
-    normalized_barcode = normalise_barcode(barcode)
+    normalized_barcode = str(barcode or "").strip()
 
     if not normalized_barcode:
         return jsonify({"error": "barcode cannot be empty"}), 400
@@ -306,9 +245,7 @@ def get_product(barcode):
         response = requests.get(
             off_url,
             timeout=20,
-            headers={
-                "User-Agent": "NutriLabel/2.0 (student project)"
-            },
+            headers={"User-Agent": "NutriLabel/2.0 (student project)"},
         )
         last_openfood_request_time = time.time()
 
@@ -320,12 +257,6 @@ def get_product(barcode):
 
         response.raise_for_status()
         off_data = response.json()
-
-    except requests.HTTPError as error:
-        return jsonify({
-            "error": "Could not reach Open Food Facts",
-            "details": str(error),
-        }), 502
 
     except requests.RequestException as error:
         return jsonify({
@@ -380,10 +311,6 @@ def get_product(barcode):
     cache_set(cache_key, result)
     return jsonify(result)
 
-
-# -----------------------------
-# OCR route
-# -----------------------------
 
 @app.route("/ocr", methods=["POST"])
 def extract_text_from_image():
@@ -454,13 +381,11 @@ def extract_text_from_image():
         }), 502
 
     parsed_results = ocr_data.get("ParsedResults") or []
-
     raw_text_parts = []
 
     for item in parsed_results:
         if isinstance(item, dict):
             parsed_text = item.get("ParsedText") or ""
-
             if parsed_text:
                 raw_text_parts.append(parsed_text)
 
@@ -477,10 +402,6 @@ def extract_text_from_image():
         "raw_text": " ".join(raw_text_parts).strip(),
     })
 
-
-# -----------------------------
-# Iteration 2: onboarding / profile generation
-# -----------------------------
 
 @app.route("/onboarding", methods=["POST"])
 def onboarding():
@@ -501,7 +422,6 @@ def onboarding():
 
     if isinstance(diet, str):
         diet_value = diet.strip()
-
         if diet_value in ["vegan", "vegetarian", "eggetarian", "Jain"]:
             add_profile(
                 diet_value,
@@ -575,10 +495,6 @@ def onboarding():
     })
 
 
-# -----------------------------
-# Iteration 2: profile storage
-# -----------------------------
-
 @app.route("/profile/save", methods=["POST"])
 def save_profile():
     data = get_json_body()
@@ -648,7 +564,6 @@ def get_profiles():
 @app.route("/profile/update/<int:profile_id>", methods=["PUT"])
 def update_profile(profile_id):
     data = get_json_body()
-
     db = SessionLocal()
 
     try:
@@ -697,6 +612,8 @@ def update_profile(profile_id):
 
     finally:
         db.close()
+
+
 @app.route("/profile/delete/<int:profile_id>", methods=["DELETE"])
 def delete_profile(profile_id):
     db = SessionLocal()
@@ -718,9 +635,6 @@ def delete_profile(profile_id):
     finally:
         db.close()
 
-# -----------------------------
-# Iteration 2: history
-# -----------------------------
 
 @app.route("/history/save", methods=["POST"])
 def save_history():
@@ -818,6 +732,8 @@ def get_history_detail(history_id):
 
     finally:
         db.close()
+
+
 @app.route("/history/delete/<int:history_id>", methods=["DELETE"])
 def delete_history_item(history_id):
     db = SessionLocal()
@@ -839,14 +755,10 @@ def delete_history_item(history_id):
     finally:
         db.close()
 
-# -----------------------------
-# Iteration 2: recommendations
-# -----------------------------
 
 @app.route("/recommendations", methods=["GET"])
 def recommendations():
     profiles = request.args.getlist("profile")
-
     recommendations_list = []
 
     def add_recommendation(rec_type, item, reason):
@@ -906,7 +818,6 @@ def recommendations():
             "These conflict with nut-free requirements.",
         )
 
-        # Remove almond milk if vegan + nut-free conflict exists
         recommendations_list = [
             rec for rec in recommendations_list
             if "almond milk" not in rec.get("item", "").lower()
@@ -931,10 +842,6 @@ def recommendations():
         "recommendations": recommendations_list,
     })
 
-
-# -----------------------------
-# Error handlers
-# -----------------------------
 
 @app.errorhandler(404)
 def not_found(_error):
@@ -961,10 +868,6 @@ def internal_server_error(error):
         "details": str(error),
     }), 500
 
-
-# -----------------------------
-# Local runner
-# -----------------------------
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
