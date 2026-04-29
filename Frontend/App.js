@@ -1,12 +1,15 @@
+import 'react-native-gesture-handler';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import EditProfileScreen from './screens/EditProfileScreen';
+import QuestionnaireScreen from './screens/QuestionnaireScreen';
 import ScanScreen from './screens/ScanScreen';
 import ManualInputScreen from './screens/ManualInputScreen';
 import ResultScreen from './screens/ResultScreen';
-import QuestionnaireScreen from './screens/QuestionnaireScreen';
 import HistoryScreen from './screens/HistoryScreen';
 
 const Stack = createNativeStackNavigator();
@@ -14,50 +17,20 @@ const Stack = createNativeStackNavigator();
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator>
-
-        <Stack.Screen
-          name="Home"
-          component={HomeScreen}
-          options={{ title: 'NutriLabel' }}
-        />
-
-        <Stack.Screen
-          name="Questionnaire"
-          component={QuestionnaireScreen}
-          options={{ title: 'Questionnaire' }}
-        />
-
-        <Stack.Screen
-          name="Profile"
-          component={ProfileScreen}
-          options={{ title: 'Select Profiles' }}
-        />
-
-        <Stack.Screen
-          name="Scan"
-          component={ScanScreen}
-          options={{ title: 'Barcode Lookup' }}
-        />
-
-        <Stack.Screen
-          name="ManualInput"
-          component={ManualInputScreen}
-          options={{ title: 'Enter Ingredients' }}
-        />
-
-        <Stack.Screen
-          name="Results"
-          component={ResultScreen}
-          options={{ title: 'Results' }}
-        />
-
-        <Stack.Screen
-          name="History"
-          component={HistoryScreen}
-          options={{ title: 'History' }}
-        />
-
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{
+          headerShown: false
+        }}
+      >
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+        <Stack.Screen name="Questionnaire" component={QuestionnaireScreen} />
+        <Stack.Screen name="Scan" component={ScanScreen} />
+        <Stack.Screen name="ManualInput" component={ManualInputScreen} />
+        <Stack.Screen name="Results" component={ResultScreen} />
+        <Stack.Screen name="History" component={HistoryScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
