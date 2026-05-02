@@ -8,17 +8,20 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   deleteHistoryItem,
   displayProfile,
   fetchHistory,
   fetchHistoryDetail,
 } from '../services/api';
+
 import {
   getHighContrastPreference,
   getStatusConfig,
@@ -44,6 +47,14 @@ export default function HistoryScreen({ navigation }) {
 
   const colors = theme(highContrast);
 
+  const showMessage = (title, message) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const loadHistory = async () => {
     try {
       setLoading(true);
@@ -66,7 +77,7 @@ export default function HistoryScreen({ navigation }) {
       });
 
       setHistory(unique);
-    } catch {
+    } catch (error) {
       try {
         const local = await AsyncStorage.getItem('HISTORY');
         setHistory(local ? JSON.parse(local) : []);
@@ -109,7 +120,7 @@ export default function HistoryScreen({ navigation }) {
         fromHistory: true,
       });
     } catch (error) {
-      Alert.alert('Could not open history', error.message || 'Please try again.');
+      showMessage('Could not open history', error.message || 'Please try again.');
     }
   };
 
@@ -117,22 +128,57 @@ export default function HistoryScreen({ navigation }) {
     const local = await AsyncStorage.getItem('HISTORY');
     const localHistory = local ? JSON.parse(local) : [];
 
+    const targetKey = `${targetItem.id}-${targetItem.product_name || targetItem.name}-${targetItem.timestamp || targetItem.date}`;
+
     const filtered = localHistory.filter((item) => {
-      if (targetItem.localOnly && item.id === targetItem.id) {
-        return false;
-      }
-
       const itemKey = `${item.id}-${item.product_name || item.name}-${item.timestamp || item.date}`;
-      const targetKey = `${targetItem.id}-${targetItem.product_name || targetItem.name}-${targetItem.timestamp || targetItem.date}`;
-
       return itemKey !== targetKey;
     });
 
     await AsyncStorage.setItem('HISTORY', JSON.stringify(filtered));
   };
 
-  const handleDeleteHistory = (item) => {
+  const performDeleteHistory = async (item) => {
+    const key = `${item.id}-${item.timestamp || item.date}`;
+
+    try {
+      setDeletingKey(key);
+
+      if (item.localOnly || item.analysis_json?.localOnly) {
+        await removeLocalHistoryItem(item);
+      } else {
+        await deleteHistoryItem(item.id);
+      }
+
+      setHistory((current) =>
+        current.filter((historyItem) => {
+          const historyKey = `${historyItem.id}-${historyItem.timestamp || historyItem.date}`;
+          return historyKey !== key;
+        })
+      );
+
+      showMessage('Removed', 'History item removed successfully.');
+    } catch (error) {
+      showMessage('Delete failed', error.message || 'Could not remove history item.');
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const handleDeleteHistory = async (item) => {
     const itemName = item.product_name || item.name || 'this saved result';
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to remove "${itemName}" from history?`
+      );
+
+      if (confirmed) {
+        await performDeleteHistory(item);
+      }
+
+      return;
+    }
 
     Alert.alert(
       'Remove From History',
@@ -143,28 +189,7 @@ export default function HistoryScreen({ navigation }) {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            const key = `${item.id}-${item.timestamp || item.date}`;
-
-            try {
-              setDeletingKey(key);
-
-              if (item.localOnly) {
-                await removeLocalHistoryItem(item);
-              } else {
-                await deleteHistoryItem(item.id);
-              }
-
-              setHistory((current) =>
-                current.filter((historyItem) => {
-                  const historyKey = `${historyItem.id}-${historyItem.timestamp || historyItem.date}`;
-                  return historyKey !== key;
-                })
-              );
-            } catch (error) {
-              Alert.alert('Delete failed', error.message || 'Could not remove history item.');
-            } finally {
-              setDeletingKey(null);
-            }
+            await performDeleteHistory(item);
           },
         },
       ]
@@ -237,7 +262,8 @@ export default function HistoryScreen({ navigation }) {
               const statusConfig = getStatusConfig(result);
               const profiles = item.profile_used || item.profile || [];
               const key = `${item.id || index}-${item.timestamp || item.date || index}`;
-              const isDeleting = deletingKey === `${item.id}-${item.timestamp || item.date}`;
+              const deleteKey = `${item.id}-${item.timestamp || item.date}`;
+              const isDeleting = deletingKey === deleteKey;
 
               return (
                 <View
@@ -273,6 +299,7 @@ export default function HistoryScreen({ navigation }) {
                         <Text style={[styles.productName, { color: colors.text }]}>
                           {item.product_name || item.name || 'Product Analysis'}
                         </Text>
+
                         <Text
                           style={[
                             styles.resultText,
@@ -319,6 +346,7 @@ export default function HistoryScreen({ navigation }) {
                       {
                         borderColor: highContrast ? colors.border : '#EF5350',
                         backgroundColor: highContrast ? colors.card2 : '#FFEBEE',
+                        opacity: isDeleting ? 0.7 : 1,
                       },
                     ]}
                     onPress={() => handleDeleteHistory(item)}
@@ -331,7 +359,9 @@ export default function HistoryScreen({ navigation }) {
                     ) : (
                       <>
                         <Ionicons name="trash" size={18} color="#EF5350" />
-                        <Text style={styles.deleteButtonText}>Remove From History</Text>
+                        <Text style={styles.deleteButtonText}>
+                          Remove From History
+                        </Text>
                       </>
                     )}
                   </Pressable>
@@ -346,17 +376,30 @@ export default function HistoryScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { padding: 20, paddingBottom: 40 },
+  flex: {
+    flex: 1,
+  },
+  container: {
+    padding: 20,
+    paddingBottom: 40,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 24,
   },
-  title: { fontSize: 26, fontWeight: '900' },
-  centerBox: { padding: 40, alignItems: 'center' },
-  loadingText: { marginTop: 12 },
+  title: {
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  centerBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+  },
   emptyCard: {
     borderRadius: 26,
     padding: 30,
@@ -364,7 +407,11 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
   },
-  emptyTitle: { fontSize: 24, fontWeight: '900', marginTop: 14 },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    marginTop: 14,
+  },
   emptyText: {
     textAlign: 'center',
     lineHeight: 22,
@@ -376,7 +423,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
   },
-  primaryText: { fontWeight: '900' },
+  primaryText: {
+    fontWeight: '900',
+  },
   historyCard: {
     borderRadius: 22,
     padding: 18,
@@ -397,7 +446,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
-  productName: { fontSize: 17, fontWeight: '900' },
+  productName: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
   resultText: {
     fontSize: 14,
     fontWeight: '900',
@@ -419,8 +471,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-  profileTagText: { fontWeight: '800', fontSize: 12 },
-  noProfileText: { fontSize: 13 },
+  profileTagText: {
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  noProfileText: {
+    fontSize: 13,
+  },
   deleteButton: {
     marginTop: 14,
     borderWidth: 2,
