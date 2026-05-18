@@ -1,6 +1,0 @@
-year,customer_complaint,distributor_or_retailer_complaint,routine_government_testing,routine_testing_by_company,other,source,source_url
-2021,20,0,8,0,10,FSANZ Australian food recall statistics,https://www.foodstandards.gov.au/food-recalls/recallstats
-2022,11,1,3,9,5,FSANZ Australian food recall statistics,https://www.foodstandards.gov.au/food-recalls/recallstats
-2023,19,1,8,6,7,FSANZ Australian food recall statistics,https://www.foodstandards.gov.au/food-recalls/recallstats
-2024,20,5,4,10,15,FSANZ Australian food recall statistics,https://www.foodstandards.gov.au/food-recalls/recallstats
-2025,21,3,2,3,6,FSANZ Australian food recall statistics,https://www.foodstandards.gov.au/food-recalls/recallstats
