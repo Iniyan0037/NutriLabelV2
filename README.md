@@ -8,12 +8,6 @@ The backend is already deployed on Render, so you do **not** need to set up Flas
 
 ## Deployed Backend
 
-The frontend connects to the deployed Iteration 2 backend:
-
-```env
-EXPO_PUBLIC_API_BASE_URL=https://nutrilabel-backend-iteration2.onrender.com
-```
-
 Backend features already hosted on Render include:
 
 - ingredient analysis
