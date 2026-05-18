@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: nutrilabel-backend
-    runtime: python
-    rootDir: Backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --timeout 180 app:app
-    plan: free
