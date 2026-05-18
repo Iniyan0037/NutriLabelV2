@@ -204,10 +204,6 @@ NutriLabel/
 │   ├── data/
 │   └── ...
 │
-├── documentation/
-│   ├── Nutrilabel Security Plan.pdf
-│   └── Penetration Testing Iteration 3.pdf
-│
 ├── README.md
 └── ...
 ```
