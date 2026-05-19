@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "NutriLabel",
+    "slug": "nutrilabel-frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "nutrilabel",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F0D8"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.iniyan0037.nutrilabelfrontend"
+    },
+    "android": {
+      "package": "com.iniyan0037.nutrilabelfrontend",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F6F0D8"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "50d77cc6-71f5-4763-936c-55e3d13f57fe"
+      }
+    }
+  }
+}
